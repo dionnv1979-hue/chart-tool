@@ -475,7 +475,7 @@ async function loadAll(symbol, interval){
   }
 
   // Гонка: первый кто ответил корректно — победил
-  async function fetchHistory(sym, iv, limit=200){
+  async function fetchHistory(sym, iv, limit=1000){
     return Promise.any([
       fetchViaIframe(sym, iv, limit),
       fetchViaProxy(sym, iv, limit)
@@ -487,8 +487,8 @@ async function loadAll(symbol, interval){
 
   // Запускаем историю параллельно (не блокируем WS)
   const histPromise = Promise.allSettled([
-    fetchHistory(symbol, interval, 200),
-    fetchHistory(symbol, htfIv, 100),
+    fetchHistory(symbol, interval, 1000),
+    fetchHistory(symbol, htfIv, 500),
   ]);
 
   // ── WS для live обновлений ─────────────────────────────────
@@ -605,7 +605,7 @@ async function loadAll(symbol, interval){
       if(nc.t === last.t){ Object.assign(last,nc); }
       else if(nc.t > last.t){
         target.push({...nc});
-        if(target.length > 300) target.shift();
+        if(target.length > 1000) target.shift();
       }
     };
     upd(store[interval]||[], candles);
@@ -628,7 +628,7 @@ function connectWS(symbol,interval){
     const nc={t:k.start,o:+k.open,h:+k.high,l:+k.low,c:+k.close,v:+k.volume};
     const last=candles[candles.length-1];
     if(nc.t===last.t)Object.assign(last,nc);
-    else if(nc.t>last.t){candles.push(nc);if(candles.length>300)candles.shift();_atr=calcATR(candles,14);computeAll();const W=cc.width-PW;if(offsetX>=candles.length*cs()-W-cs()*4)offsetX=Math.max(0,candles.length*cs()-W*0.92);}
+    else if(nc.t>last.t){candles.push(nc);if(candles.length>1000)candles.shift();_atr=calcATR(candles,14);computeAll();const W=cc.width-PW;if(offsetX>=candles.length*cs()-W-cs()*4)offsetX=Math.max(0,candles.length*cs()-W*0.92);}
     updateHdr(nc.c,nc.o);safeRender();
   };
   ws.onerror=()=>{wsDot.className='wsdot err';};
