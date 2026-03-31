@@ -440,6 +440,7 @@ let zoom=1,offsetX=0;
 let ws=null,wsRet=0,wsPing=null;
 let cleanMode=false,btMode=false,nextId=1,_raf=null;
 let _signal=null; // current core signal
+let _lastSignal=null; // последний ВАЛИДНЫЙ сигнал — не затирается при отсутствии
 let journal=[];
 let btRunning=false,btResults=null;
 // Frequency tracking: rolling 24h of signal timestamps
@@ -753,7 +754,19 @@ function computeAll(){if(btMode)return;
   // throttle: не чаще раза в 150ms (кроме первого запуска)
   const now=Date.now();
   if(candles.length>1 && now-_lastCompute<150)return;
-  _lastCompute=now;updateSessUI();computeVP();detectSwings();detectHTFSwings();detectLevels();detectLiquidity();detectOBs();detectFVG();detectRegime();detectCoreSignal();renderAll2();} // analyzeHTF вызывается отдельно только при изменении htfC
+  _lastCompute=now;
+  updateSessUI();
+  computeVP();
+  detectSwings();
+  detectHTFSwings();
+  detectLevels();
+  detectLiquidity();
+  detectOBs();
+  detectFVG();
+  detectRegime();
+  detectCoreSignal();
+  safeRender(); // только визуальный рендер канваса, UI вкладок уже обновлён в detectCoreSignal
+} // analyzeHTF вызывается отдельно только при изменении htfC
 
 // ══════════════════════════════════════
 // VP
@@ -823,7 +836,7 @@ function getMS(H,L,lc){if(H.length<2||L.length<2)return{trend:'unknown',bos:null
     C5. MTF alignment (HTF swing in same direction)
 */
 function detectCoreSignal(){
-  _signal=null;
+  // _signal НЕ обнуляем в начале — сохраняем последнее значение до нового
   if(candles.length<30||!_atr)return;
   const n=candles.length,lc=candles[n-1].c;
   const e=candles.length-1;
@@ -846,8 +859,15 @@ function detectCoreSignal(){
   if(!ob){
     // нет OB — ищем любой OB в направлении на экране
     // показываем ожидание но не выходим жёстко
-    if(!hasSweep){renderFocus(null,'⏳ Нет sweep и OB. Ожидание.');renderContext();renderLevels();return;}
-    renderFocus(null,`⏳ ${hasSweep?'Sweep @ '+fp(sweep.price)+' —':''} нет OB. Ждать зоны.`);
+    if(!hasSweep){
+      // нет ни sweep ни OB — показываем lastSignal если есть, иначе ожидание
+      if(_lastSignal) renderFocus(_lastSignal);
+      else renderFocus(null,'⏳ Нет sweep и OB. Ожидание.');
+      renderContext();renderLevels();return;
+    }
+    // есть sweep но нет OB — показываем lastSignal или ожидание
+    if(_lastSignal) renderFocus(_lastSignal);
+    else renderFocus(null,`⏳ Sweep @ ${fp(sweep.price)} — нет OB. Ждать зоны.`);
     renderContext();renderLevels();return;
   }
 
@@ -963,6 +983,7 @@ function detectCoreSignal(){
   }
 
   _signal={dir,isLong,stage,ob,sweep,zone,slP,finalTP,rrV,tpMult,effectiveR,riskMult,grade:{score,letter},filterResults,confs,hardBlocked,sess,ms,tpLiq,lc};
+  _lastSignal=_signal; // сохраняем валидный сигнал
   renderFocus(_signal);
   renderContext();
   renderLevels();
@@ -1404,7 +1425,7 @@ document.querySelectorAll('.btab').forEach(btn=>{btn.addEventListener('click',()
 function resize(){applyLayout();cc.width=cwrap.clientWidth;cc.height=cwrap.clientHeight;const cr=document.querySelector('.crow');vc.width=cr.clientWidth;vc.height=document.querySelector('.vbar').clientHeight;vpCv.width=document.querySelector('.vpw').clientWidth;vpCv.height=cwrap.clientHeight;safeRender();}
 function reload(){
   btRunning=false;nextId=1;drawings=[];autoLvls=[];liqPools=[];orderBlocks=[];fvgList=[];
-  vpData=null;htfCtx=null;_signal=null;signalHistory=[];candles=[];htfC=[];ltfC=[];
+  vpData=null;htfCtx=null;_signal=null;_lastSignal=null;signalHistory=[];candles=[];htfC=[];ltfC=[];
   if(_loaderWS){_loaderWS.onclose=null;_loaderWS.close();_loaderWS=null;}
   if(ws){ws.onclose=null;ws.close();ws=null;}
   clearInterval(wsPing);wsRet=0;
