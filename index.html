@@ -156,12 +156,44 @@ canvas{display:block;touch-action:none;}
 /* BOTTOM */
 .bot{background:var(--sf);border-top:1px solid var(--bd);flex-shrink:0;}
 .btabs{display:flex;border-bottom:1px solid var(--bd);}
-.btab{flex:1;padding:5px 2px;font-size:9px;color:var(--mu);background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;border-bottom:2px solid transparent;white-space:nowrap;}
+.btab{flex:1;padding:5px 2px;font-size:9px;color:var(--mu);background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;border-bottom:2px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .btab.on{color:var(--gold);border-bottom-color:var(--gold);}
 .bpages{max-height:180px;overflow-y:auto;transition:max-height .25s ease;}
 .bpages.collapsed{max-height:0;overflow:hidden;}
-.panel-toggle{background:none;border:none;color:var(--mu);font:10px 'JetBrains Mono',monospace;cursor:pointer;padding:2px 6px;margin-left:auto;flex-shrink:0;}
+.panel-toggle{background:none;border:none;color:var(--mu);font:10px 'JetBrains Mono',monospace;cursor:pointer;padding:2px 8px;margin-left:auto;flex-shrink:0;font-size:13px;}
 .panel-toggle:hover{color:var(--tx);}
+
+/* Fullscreen overlay панель */
+.panel-overlay{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:200;
+  background:var(--bg);
+  flex-direction:column;
+}
+.panel-overlay.open{display:flex;}
+.panel-overlay-hdr{
+  display:flex;
+  align-items:center;
+  padding:8px 10px;
+  background:var(--sf);
+  border-bottom:1px solid var(--bd);
+  flex-shrink:0;
+  gap:4px;
+}
+.panel-overlay-hdr .btab{font-size:11px;padding:5px 8px;flex:none;}
+.panel-overlay-close{
+  margin-left:auto;
+  background:none;border:none;
+  color:var(--mu);font-size:20px;
+  cursor:pointer;padding:2px 8px;
+  line-height:1;
+}
+.panel-overlay-close:hover{color:var(--rd);}
+.panel-overlay-body{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px;}
+.panel-overlay-body .bpage{display:none;flex-direction:column;gap:4px;}
+.panel-overlay-body .bpage.on{display:flex;}
 .bpages::-webkit-scrollbar{width:3px;}
 .bpages::-webkit-scrollbar-thumb{background:var(--b2);}
 .bpage{display:none;padding:5px 6px;flex-direction:column;gap:3px;}
@@ -311,7 +343,7 @@ canvas{display:block;touch-action:none;}
         <button class="btab" data-tab="journal">📒 Журнал</button>
         <button class="btab" data-tab="backtest">🔬 Бэктест</button>
         <button class="btab" data-tab="levels">📊 Уровни</button>
-        <button class="panel-toggle" id="panelToggle" title="Свернуть/развернуть">▼</button>
+        <button class="panel-toggle" id="panelToggle" title="Открыть панель">⤢</button>
       </div>
       <div class="bpages">
         <div class="bpage on" id="tab-context"></div>
@@ -322,6 +354,26 @@ canvas{display:block;touch-action:none;}
     </div>
   </div>
 </div>
+
+<!-- FULLSCREEN PANEL OVERLAY -->
+<div class="panel-overlay" id="panelOverlay">
+  <div class="panel-overlay-hdr">
+    <button class="btab on" data-otab="context">📍 Сигнал</button>
+    <button class="btab" data-otab="context2">📊 Контекст</button>
+    <button class="btab" data-otab="journal">📒 Журнал</button>
+    <button class="btab" data-otab="levels">📊 Уровни</button>
+    <button class="btab" data-otab="backtest">🔬 Бэктест</button>
+    <button class="panel-overlay-close" id="panelOverlayClose">✕</button>
+  </div>
+  <div class="panel-overlay-body" id="panelOverlayBody">
+    <div class="bpage on" id="otab-context"></div>
+    <div class="bpage" id="otab-context2"></div>
+    <div class="bpage" id="otab-journal"></div>
+    <div class="bpage" id="otab-levels"></div>
+    <div class="bpage" id="otab-backtest"></div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -359,6 +411,7 @@ let candles=[],htfC=[],ltfC=[],drawings=[];
 let autoLvls=[],liqPools=[],orderBlocks=[],fvgList=[];
 let vpData=null,htfCtx=null,regime='unknown',htfPD='neutral';
 let _H=[],_L=[],_htfH=[],_htfL=[];
+const ANALYSIS_BARS = 500; // анализируем последние N свечей, не зависит от зума/скролла
 let _atr=0,_htfAtr=0;
 let tf='15',sym='BTCUSDT';
 let zoom=1,offsetX=0;
@@ -688,30 +741,34 @@ function computeVP(){if(!candles.length)return;const{s,e}=vr();let hi=-Infinity,
 // ══════════════════════════════════════
 // SWINGS
 // ══════════════════════════════════════
-function sw5(arr){const H=[],L=[];for(let i=2;i<arr.length-2;i++){const c=arr[i];if(c.h>arr[i-1].h&&c.h>arr[i-2].h&&c.h>arr[i+1].h&&c.h>arr[i+2].h)H.push({i,p:c.h});if(c.l<arr[i-1].l&&c.l<arr[i-2].l&&c.l<arr[i+1].l&&c.l<arr[i+2].l)L.push({i,p:c.l});}return{H,L};}
-function detectSwings(){const r=sw5(candles);_H=r.H;_L=r.L;} // все свечи, не только видимые
+function sw5(arr,offset=0){const H=[],L=[];for(let i=2;i<arr.length-2;i++){const c=arr[i];if(c.h>arr[i-1].h&&c.h>arr[i-2].h&&c.h>arr[i+1].h&&c.h>arr[i+2].h)H.push({i:i+offset,p:c.h});if(c.l<arr[i-1].l&&c.l<arr[i-2].l&&c.l<arr[i+1].l&&c.l<arr[i+2].l)L.push({i:i+offset,p:c.l});}return{H,L};}
+function detectSwings(){
+  const s=Math.max(0,candles.length-ANALYSIS_BARS);
+  const r=sw5(candles.slice(s),s); // последние N свечей с правильными индексами
+  _H=r.H;_L=r.L;
+}
 function detectHTFSwings(){const r=sw5(htfC);_htfH=r.H;_htfL=r.L;}
 
 // ══════════════════════════════════════
 // LEVELS
 // ══════════════════════════════════════
-function detectLevels(){autoLvls=[];if(!_atr||candles.length<20)return;const{s,e}=vr(),zHW=_atr*0.45;const cands=[..._H.map(h=>({price:h.p,type:'resistance'})),..._L.map(l=>({price:l.p,type:'support'}))];cands.sort((a,b)=>a.price-b.price);const merged=[];for(const c of cands){const ex=merged.find(m=>Math.abs(m.price-c.price)<zHW*1.5);if(ex){ex.price=(ex.price+c.price)/2;ex.votes++;}else merged.push({price:c.price,type:c.type,votes:1});}const avgV=avg(candles.slice(s,e+1).map(c=>c.v))||1;for(const z of merged){const pz=z.price,pH=pz+zHW,pL=pz-zHW;let rej=0,tests=0,volZ=0,inZ=false;for(let i=s;i<=e;i++){const c=candles[i],bH=Math.max(c.o,c.c),bL=Math.min(c.o,c.c),t=c.h>=pL&&c.l<=pH;if(t){if(!inZ){tests++;inZ=true;}if(z.type==='resistance'&&c.h>=pL&&bH<=pH+zHW*0.3)rej++;if(z.type==='support'&&c.l<=pH&&bL>=pL-zHW*0.3)rej++;const mid=(c.h+c.l)/2;if((c.c>=pL&&c.c<=pH)||(mid>=pL&&mid<=pH))volZ+=c.v;}else if(inZ&&(c.h<pL||c.l>pH))inZ=false;}const volW=Math.min(6,volZ/avgV),score=z.votes*1.5+rej*2+tests*3+volW;if(score<4)continue;const lc=candles[candles.length-1].c;autoLvls.push({price:pz,zHW,type:lc<pz?'resistance':'support',score,tests,rej,volW:volW.toFixed(1)});}autoLvls.sort((a,b)=>b.score-a.score);autoLvls=autoLvls.slice(0,6);}
+function detectLevels(){autoLvls=[];if(!_atr||candles.length<20)return;const s=Math.max(0,candles.length-ANALYSIS_BARS),e=candles.length-1,zHW=_atr*0.45;const cands=[..._H.map(h=>({price:h.p,type:'resistance'})),..._L.map(l=>({price:l.p,type:'support'}))];cands.sort((a,b)=>a.price-b.price);const merged=[];for(const c of cands){const ex=merged.find(m=>Math.abs(m.price-c.price)<zHW*1.5);if(ex){ex.price=(ex.price+c.price)/2;ex.votes++;}else merged.push({price:c.price,type:c.type,votes:1});}const avgV=avg(candles.slice(s,e+1).map(c=>c.v))||1;for(const z of merged){const pz=z.price,pH=pz+zHW,pL=pz-zHW;let rej=0,tests=0,volZ=0,inZ=false;for(let i=s;i<=e;i++){const c=candles[i],bH=Math.max(c.o,c.c),bL=Math.min(c.o,c.c),t=c.h>=pL&&c.l<=pH;if(t){if(!inZ){tests++;inZ=true;}if(z.type==='resistance'&&c.h>=pL&&bH<=pH+zHW*0.3)rej++;if(z.type==='support'&&c.l<=pH&&bL>=pL-zHW*0.3)rej++;const mid=(c.h+c.l)/2;if((c.c>=pL&&c.c<=pH)||(mid>=pL&&mid<=pH))volZ+=c.v;}else if(inZ&&(c.h<pL||c.l>pH))inZ=false;}const volW=Math.min(6,volZ/avgV),score=z.votes*1.5+rej*2+tests*3+volW;if(score<4)continue;const lc=candles[candles.length-1].c;autoLvls.push({price:pz,zHW,type:lc<pz?'resistance':'support',score,tests,rej,volW:volW.toFixed(1)});}autoLvls.sort((a,b)=>b.score-a.score);autoLvls=autoLvls.slice(0,6);}
 
 // ══════════════════════════════════════
 // LIQUIDITY
 // ══════════════════════════════════════
-function detectLiquidity(){liqPools=[];if(!candles.length)return;const lc=candles[candles.length-1].c,tol=lc*0.0015;const mk=(pairs,type)=>{const p=[];for(let i=0;i<pairs.length;i++)for(let j=i+1;j<pairs.length;j++)if(Math.abs(pairs[i].p-pairs[j].p)<=tol){const pr=(pairs[i].p+pairs[j].p)/2;if(!p.find(e=>Math.abs(e.price-pr)<tol*2))p.push({price:pr,type});}return p;};const all=[...mk(_H,'buyside'),...mk(_L,'sellside')];const{e}=vr();for(const pool of all){for(let i=Math.max(0,e-12);i<=e;i++){const c=candles[i];if(pool.type==='buyside'&&c.h>pool.price&&c.c<pool.price){pool.swept=true;pool.sweepBar=i;pool.sweepAge=e-i;break;}if(pool.type==='sellside'&&c.l<pool.price&&c.c>pool.price){pool.swept=true;pool.sweepBar=i;pool.sweepAge=e-i;break;}}}liqPools=all;}
+function detectLiquidity(){liqPools=[];if(!candles.length)return;const lc=candles[candles.length-1].c,tol=lc*0.0015;const mk=(pairs,type)=>{const p=[];for(let i=0;i<pairs.length;i++)for(let j=i+1;j<pairs.length;j++)if(Math.abs(pairs[i].p-pairs[j].p)<=tol){const pr=(pairs[i].p+pairs[j].p)/2;if(!p.find(e=>Math.abs(e.price-pr)<tol*2))p.push({price:pr,type});}return p;};const all=[...mk(_H,'buyside'),...mk(_L,'sellside')];const e=candles.length-1;for(const pool of all){for(let i=Math.max(0,e-20);i<=e;i++){const c=candles[i];if(pool.type==='buyside'&&c.h>pool.price&&c.c<pool.price){pool.swept=true;pool.sweepBar=i;pool.sweepAge=e-i;break;}if(pool.type==='sellside'&&c.l<pool.price&&c.c>pool.price){pool.swept=true;pool.sweepBar=i;pool.sweepAge=e-i;break;}}}liqPools=all;}
 
 // ══════════════════════════════════════
 // ORDER BLOCKS
 // ══════════════════════════════════════
-function detectOBs(){orderBlocks=[];if(candles.length<10||!_atr)return;const{s,e}=vr(),dt=_atr*1.5;for(let i=s+1;i<=e-1;i++){const c=candles[i],nx=candles[i+1],move=Math.abs(nx.c-nx.o);if(move<_atr*0.7)continue;const isD=move>=dt;if(c.o>c.c&&nx.c>nx.o){const ph=_H.filter(h=>h.i<i).slice(-1)[0];if(ph&&nx.c>ph.p){const mit=candles.slice(i+1,e+1).some(x=>x.l<=c.c&&x.h>=c.o);if(!mit)orderBlocks.push({i,type:'bullish',hi:c.o,lo:c.c,bos:ph.p,strong:isD,age:e-i});}}if(c.c>c.o&&nx.c<nx.o){const pl=_L.filter(l=>l.i<i).slice(-1)[0];if(pl&&nx.c<pl.p){const mit=candles.slice(i+1,e+1).some(x=>x.h>=c.o&&x.l<=c.c);if(!mit)orderBlocks.push({i,type:'bearish',hi:c.c,lo:c.o,bos:pl.p,strong:isD,age:e-i});}}}}
+function detectOBs(){orderBlocks=[];if(candles.length<10||!_atr)return;const s=Math.max(0,candles.length-ANALYSIS_BARS),e=candles.length-1,dt=_atr*1.5;for(let i=s+1;i<=e-1;i++){const c=candles[i],nx=candles[i+1],move=Math.abs(nx.c-nx.o);if(move<_atr*0.7)continue;const isD=move>=dt;if(c.o>c.c&&nx.c>nx.o){const ph=_H.filter(h=>h.i<i).slice(-1)[0];if(ph&&nx.c>ph.p){const mit=candles.slice(i+1,e+1).some(x=>x.l<=c.c&&x.h>=c.o);if(!mit)orderBlocks.push({i,type:'bullish',hi:c.o,lo:c.c,bos:ph.p,strong:isD,age:e-i});}}if(c.c>c.o&&nx.c<nx.o){const pl=_L.filter(l=>l.i<i).slice(-1)[0];if(pl&&nx.c<pl.p){const mit=candles.slice(i+1,e+1).some(x=>x.h>=c.o&&x.l<=c.c);if(!mit)orderBlocks.push({i,type:'bearish',hi:c.c,lo:c.o,bos:pl.p,strong:isD,age:e-i});}}}}
 function obSc(ob){let s=ob.strong?3:1.5;if(ob.age>100)s*=0.2;else if(ob.age>50)s*=0.5;else if(ob.age>25)s*=0.75;return s;}
 
 // ══════════════════════════════════════
 // FVG
 // ══════════════════════════════════════
-function detectFVG(){fvgList=[];if(candles.length<6||!_atr)return;const{s,e}=vr(),mg=_atr*0.3;for(let i=s+2;i<=e;i++){const p2=candles[i-2],c=candles[i];if(c.l>p2.h&&(c.l-p2.h)>=mg){const g={i,type:'bullish',top:c.l,bottom:p2.h};g.mitigated=candles.slice(i+1,e+1).some(x=>x.l<=g.top&&x.h>=g.bottom);fvgList.push(g);}if(c.h<p2.l&&(p2.l-c.h)>=mg){const g={i,type:'bearish',top:p2.l,bottom:c.h};g.mitigated=candles.slice(i+1,e+1).some(x=>x.h>=g.bottom&&x.l<=g.top);fvgList.push(g);}}fvgList=[...fvgList.filter(f=>!f.mitigated).slice(-6),...fvgList.filter(f=>f.mitigated).slice(-2)];}
+function detectFVG(){fvgList=[];if(candles.length<6||!_atr)return;const s=Math.max(0,candles.length-ANALYSIS_BARS),e=candles.length-1,mg=_atr*0.3;for(let i=s+2;i<=e;i++){const p2=candles[i-2],c=candles[i];if(c.l>p2.h&&(c.l-p2.h)>=mg){const g={i,type:'bullish',top:c.l,bottom:p2.h};g.mitigated=candles.slice(i+1,e+1).some(x=>x.l<=g.top&&x.h>=g.bottom);fvgList.push(g);}if(c.h<p2.l&&(p2.l-c.h)>=mg){const g={i,type:'bearish',top:p2.l,bottom:c.h};g.mitigated=candles.slice(i+1,e+1).some(x=>x.h>=g.bottom&&x.l<=g.top);fvgList.push(g);}}fvgList=[...fvgList.filter(f=>!f.mitigated).slice(-6),...fvgList.filter(f=>f.mitigated).slice(-2)];}
 
 // ══════════════════════════════════════
 // HTF + REGIME
@@ -747,7 +804,7 @@ function detectCoreSignal(){
   _signal=null;
   if(candles.length<30||!_atr)return;
   const n=candles.length,lc=candles[n-1].c;
-  const{e}=vr();
+  const e=candles.length-1;
   const sess=getSess();
   const ms=getMS(_H,_L,lc);
 
@@ -1220,30 +1277,101 @@ document.getElementById('btnClean').addEventListener('click',function(){cleanMod
 document.querySelectorAll('.tf').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(b=>b.classList.remove('on'));btn.classList.add('on');tf=btn.dataset.tf;reload();});});
 document.getElementById('pairSel').addEventListener('change',e=>{sym=e.target.value;reload();});
 document.getElementById('btBtn').addEventListener('click',function(){btMode=!btMode;this.classList.toggle('on',btMode);if(!btMode){computeAll();}else{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));document.querySelector('[data-tab="backtest"]').classList.add('on');document.getElementById('tab-backtest').classList.add('on');}});
-// Панель свернуть/развернуть (на мобильном — вся правая колонка)
-document.getElementById('panelToggle').addEventListener('click',function(){
-  const rc = document.getElementById('rightCol');
-  const focus = rc.querySelector('.focus');
-  const bot = rc.querySelector('.bot');
-  const pages = rc.querySelector('.bpages');
-  if(this.dataset.collapsed==='1'){
-    this.dataset.collapsed='0';
-    this.textContent='▼';
-    if(focus) focus.style.display='';
-    if(pages) pages.style.maxHeight='';
-    if(bot) bot.style.display='';
-  } else {
-    this.dataset.collapsed='1';
-    this.textContent='▲';
-    // на мобильном скрываем только bpages, focus оставляем
-    if(window.innerWidth<900){
-      if(pages) pages.style.maxHeight='0';
-    } else {
-      if(focus) focus.style.display='none';
-      if(pages) pages.style.maxHeight='0';
-    }
-  }
+// ── FULLSCREEN PANEL ──────────────────────────────────────────
+const panelOverlay = document.getElementById('panelOverlay');
+
+function openPanel(tabId){
+  // Синхронизируем контент из основных вкладок
+  syncOverlayContent();
+  panelOverlay.classList.add('open');
+  // Активируем нужную вкладку
+  const tabs = panelOverlay.querySelectorAll('[data-otab]');
+  const pages = panelOverlay.querySelectorAll('.bpage');
+  tabs.forEach(t=>t.classList.remove('on'));
+  pages.forEach(p=>p.classList.remove('on'));
+  const tab = panelOverlay.querySelector(`[data-otab="${tabId||'context'}"]`);
+  const page = document.getElementById(`otab-${tabId||'context'}`);
+  if(tab) tab.classList.add('on');
+  if(page) page.classList.add('on');
+  document.body.style.overflow='hidden';
+}
+
+function closePanel(){
+  panelOverlay.classList.remove('open');
+  document.body.style.overflow='';
+}
+
+function syncOverlayContent(){
+  // Копируем HTML из основных вкладок в overlay
+  const map = {
+    'context':  ['tab-context','focusArea'],
+    'context2': ['tab-context'],
+    'journal':  ['tab-journal'],
+    'levels':   ['tab-levels'],
+    'backtest': ['tab-backtest'],
+  };
+  // focusArea (сигнал) → otab-context
+  const focusEl = document.getElementById('focusArea');
+  const otabCtx = document.getElementById('otab-context');
+  if(focusEl && otabCtx) otabCtx.innerHTML = focusEl.innerHTML;
+
+  // context (рыночный контекст) → otab-context2
+  const ctxEl = document.getElementById('tab-context');
+  const otabCtx2 = document.getElementById('otab-context2');
+  if(ctxEl && otabCtx2) otabCtx2.innerHTML = ctxEl.innerHTML;
+
+  // journal → otab-journal
+  const jEl = document.getElementById('tab-journal');
+  const oJEl = document.getElementById('otab-journal');
+  if(jEl && oJEl) oJEl.innerHTML = jEl.innerHTML;
+
+  // levels → otab-levels
+  const lEl = document.getElementById('tab-levels');
+  const oLEl = document.getElementById('otab-levels');
+  if(lEl && oLEl) oLEl.innerHTML = lEl.innerHTML;
+
+  // backtest → otab-backtest
+  const bEl = document.getElementById('tab-backtest');
+  const oBEl = document.getElementById('otab-backtest');
+  if(bEl && oBEl) oBEl.innerHTML = bEl.innerHTML;
+}
+
+// Кнопка открытия (⤢ на нижней панели)
+document.getElementById('panelToggle').addEventListener('click', ()=>openPanel('context'));
+
+// Тап на строку сигнала (focusArea) — тоже открывает панель
+const focusAreaEl = document.getElementById('focusArea');
+if(focusAreaEl){
+  focusAreaEl.style.cursor='pointer';
+  focusAreaEl.addEventListener('click', ()=>openPanel('context'));
+}
+
+// Закрыть крестиком
+document.getElementById('panelOverlayClose').addEventListener('click', closePanel);
+
+// Вкладки внутри overlay
+document.querySelectorAll('[data-otab]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const id = btn.dataset.otab;
+    document.querySelectorAll('[data-otab]').forEach(b=>b.classList.remove('on'));
+    document.querySelectorAll('#panelOverlay .bpage').forEach(p=>p.classList.remove('on'));
+    btn.classList.add('on');
+    const pg = document.getElementById('otab-'+id);
+    if(pg) pg.classList.add('on');
+    syncOverlayContent(); // обновляем при переключении
+  });
 });
+
+// Свайп вниз для закрытия на мобильном
+let touchStartY = 0;
+panelOverlay.addEventListener('touchstart', e=>{ touchStartY = e.touches[0].clientY; }, {passive:true});
+panelOverlay.addEventListener('touchend', e=>{
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if(dy > 80) closePanel(); // свайп вниз > 80px — закрыть
+}, {passive:true});
+
+// ESC для закрытия
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closePanel(); });
 
 document.querySelectorAll('.btab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));btn.classList.add('on');document.getElementById('tab-'+btn.dataset.tab).classList.add('on');});});
 
