@@ -461,7 +461,15 @@ const wsDot=document.getElementById('wsDot');
 // ══════════════════════════════════════
 function cw(){return Math.max(2,BCW*zoom);}
 function cs(){return cw()+Math.max(1,Math.round(2*zoom));}
-function vr(){if(!candles.length)return{s:0,e:0};const W=cc.width-PW,mx=Math.max(0,candles.length*cs()-W);offsetX=Math.min(Math.max(offsetX,0),mx);const s=Math.max(0,Math.floor(offsetX/cs()));return{s,e:Math.min(candles.length-1,s+Math.ceil(W/cs())+2)};}
+function vr(){
+  if(!candles.length)return{s:0,e:0};
+  const W=Math.max(100,cc.width-PW); // защита от cc.width=0
+  const mx=Math.max(0,candles.length*cs()-W);
+  offsetX=Math.min(Math.max(offsetX,0),mx);
+  const s=Math.max(0,Math.floor(offsetX/cs()));
+  const e=Math.min(candles.length-1,s+Math.ceil(W/cs())+2);
+  return{s,e};
+}
 function prR(){const{s,e}=vr();let hi=-Infinity,lo=Infinity;for(let i=s;i<=e;i++){hi=Math.max(hi,candles[i].h);lo=Math.min(lo,candles[i].l);}if(!isFinite(hi)){hi=1;lo=0;}if(hi===lo){hi+=hi*0.005||1;lo-=lo*0.005||1;}const p=(hi-lo)*0.06;return{hi:hi+p,lo:lo-p};}
 function p2y(p){const{hi,lo}=prR();return(cc.height-TH)*(1-(p-lo)/(hi-lo));}
 function y2p(y){const{hi,lo}=prR();return lo+(1-y/(cc.height-TH))*(hi-lo);}
@@ -639,7 +647,9 @@ async function loadAll(symbol, interval){
         ltfC = [...(store[ltfIv]||[])];
         _atr = calcATR(candles,14) || (candles[candles.length-1]?.c * 0.005) || 1;
         _htfAtr = calcATR(htfC,14) || _atr*3;
-        zoom = 1; offsetX = 0;
+        zoom = 1;
+        // Показываем последние свечи, не начало истории
+        offsetX = Math.max(0, candles.length * cs() - (cc.width||window.innerWidth) * 0.85);
         if(htfC.length>=20){ detectHTFSwings(); analyzeHTF(); } // HTF один раз при старте
         computeAll();
         document.getElementById('loading').style.display='none';
@@ -678,12 +688,17 @@ async function loadAll(symbol, interval){
         started = true;
         zoom = 1;
         const W = (cc.width||window.innerWidth) - 60;
-        const tw = candles.length * (BCW + 2);
-        offsetX = tw > W ? Math.max(0, tw - W * 0.85) : 0;
+        offsetX = Math.max(0, candles.length * cs() - W * 0.85);
         computeAll();
         document.getElementById('loading').style.display='none';
       } else {
-        // WS уже работает — просто перерисовываем с полной историей
+        // WS уже работает — обновляем offsetX чтобы показать последние свечи
+        const W2 = (cc.width||window.innerWidth) - 60;
+        const maxOff = Math.max(0, candles.length * cs() - W2);
+        // Если пользователь не скроллил — двигаем к концу
+        if(offsetX >= maxOff - cs() * 10 || offsetX === 0){
+          offsetX = Math.max(0, candles.length * cs() - W2 * 0.85);
+        }
         computeAll();
         safeRender();
       }
@@ -1246,7 +1261,9 @@ function renderLevels(){if(!candles.length)return;const lc=candles[candles.lengt
 // ══════════════════════════════════════
 function safeRender(){if(_raf)return;_raf=requestAnimationFrame(()=>{renderAll2();_raf=null;});}
 function renderAll2(){drawChart();drawVBar();drawVP2();updPtag();}
-function drawChart(){if(!candles.length)return;ctx.clearRect(0,0,cc.width,cc.height);ctx.fillStyle='#060810';ctx.fillRect(0,0,cc.width,cc.height);drawGrid();drawSessBg();const{s,e}=vr(),w=cw();for(let i=s;i<=e;i++){const c=candles[i],x=i2x(i),bull=c.c>=c.o;ctx.strokeStyle=bull?'#0ecb81':'#f6465d';ctx.fillStyle=bull?'#0ecb81':'#f6465d';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,p2y(c.h));ctx.lineTo(x,p2y(c.l));ctx.stroke();const by=Math.min(p2y(c.o),p2y(c.c)),bh=Math.max(1,Math.abs(p2y(c.o)-p2y(c.c)));ctx.fillRect(x-w/2,by,w,bh);}
+function drawChart(){if(!candles.length)return;if(!cc.width||!cc.height)return; // защита от нулевого канваса
+ctx.clearRect(0,0,cc.width,cc.height);ctx.fillStyle='#060810';ctx.fillRect(0,0,cc.width,cc.height);drawGrid();drawSessBg();const{s,e}=vr(),w=cw();if(s>e)return; // нет видимых свечей
+for(let i=s;i<=e;i++){const c=candles[i],x=i2x(i),bull=c.c>=c.o;ctx.strokeStyle=bull?'#0ecb81':'#f6465d';ctx.fillStyle=bull?'#0ecb81':'#f6465d';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,p2y(c.h));ctx.lineTo(x,p2y(c.l));ctx.stroke();const by=Math.min(p2y(c.o),p2y(c.c)),bh=Math.max(1,Math.abs(p2y(c.o)-p2y(c.c)));ctx.fillRect(x-w/2,by,w,bh);}
 if(!cleanMode){if(vpData){[[vpData.poc,'#f0b90b',[],'P'],[vpData.vah,'#a855f7',[5,3],'H'],[vpData.val,'#a855f7',[5,3],'L']].forEach(([p,col,dash,lb])=>{const y=p2y(p);if(y<2||y>cc.height-TH)return;ctx.save();ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash(dash);ctx.globalAlpha=0.45;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cc.width-PW,y);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=0.7;ctx.fillStyle=col;ctx.font='bold 8px JetBrains Mono';ctx.fillText(lb+' '+fp(p),4,y-3);ctx.restore();});}autoLvls.forEach(l=>dLvl(l));liqPools.forEach(l=>dLiq(l));fvgList.filter(f=>!f.mitigated).forEach(f=>dFVG(f));orderBlocks.forEach(ob=>dOB(ob));}else{autoLvls.slice(0,2).forEach(l=>dLvl(l));orderBlocks.filter(ob=>ob.strong).forEach(ob=>dOB(ob));}drawings.forEach(d=>drawObj(d));if(isDrawing&&dStart&&dCur)drawInProg();if(mxc>0)drawCrosshair();drawPA();drawTA();}
 function drawSessBg(){if(!candles.length)return;const{s,e}=vr(),H=cc.height-TH,sc={asia:'rgba(96,165,250,.03)',london:'rgba(52,211,153,.04)',ny:'rgba(249,115,22,.04)'};for(let i=s;i<=e;i++){const h=new Date(candles[i].t).getUTCHours(),bw=cs(),x=i2x(i);for(const[k,sess]of Object.entries(SESS))if(h>=sess.s&&h<sess.e){ctx.fillStyle=sc[k]||'';ctx.fillRect(x-bw/2,0,bw,H);break;}if(KZ.some(k=>h>=k.s&&h<k.e)){ctx.fillStyle='rgba(246,70,93,.04)';ctx.fillRect(x-bw/2,0,bw,H);}}}
 function drawGrid(){const W=cc.width-PW,{hi,lo}=prR(),step=ns((hi-lo)/5);ctx.strokeStyle='rgba(27,34,48,.45)';ctx.lineWidth=1;for(let p=Math.ceil(lo/step)*step;p<=hi;p+=step){const y=p2y(p);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
