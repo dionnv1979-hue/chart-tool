@@ -754,19 +754,7 @@ function computeAll(){if(btMode)return;
   // throttle: не чаще раза в 150ms (кроме первого запуска)
   const now=Date.now();
   if(candles.length>1 && now-_lastCompute<150)return;
-  _lastCompute=now;
-  updateSessUI();
-  computeVP();
-  detectSwings();
-  detectHTFSwings();
-  detectLevels();
-  detectLiquidity();
-  detectOBs();
-  detectFVG();
-  detectRegime();
-  detectCoreSignal();
-  safeRender(); // только визуальный рендер канваса, UI вкладок уже обновлён в detectCoreSignal
-} // analyzeHTF вызывается отдельно только при изменении htfC
+  _lastCompute=now;updateSessUI();computeVP();detectSwings();detectHTFSwings();detectLevels();detectLiquidity();detectOBs();detectFVG();detectRegime();detectCoreSignal();renderAll2();} // analyzeHTF вызывается отдельно только при изменении htfC
 
 // ══════════════════════════════════════
 // VP
