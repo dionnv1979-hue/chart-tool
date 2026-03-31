@@ -134,7 +134,10 @@ canvas{display:block;touch-action:none;}
 .btabs{display:flex;border-bottom:1px solid var(--bd);}
 .btab{flex:1;padding:5px 2px;font-size:9px;color:var(--mu);background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;border-bottom:2px solid transparent;white-space:nowrap;}
 .btab.on{color:var(--gold);border-bottom-color:var(--gold);}
-.bpages{max-height:130px;overflow-y:auto;}
+.bpages{max-height:180px;overflow-y:auto;transition:max-height .25s ease;}
+.bpages.collapsed{max-height:0;overflow:hidden;}
+.panel-toggle{background:none;border:none;color:var(--mu);font:10px 'JetBrains Mono',monospace;cursor:pointer;padding:2px 6px;margin-left:auto;flex-shrink:0;}
+.panel-toggle:hover{color:var(--tx);}
 .bpages::-webkit-scrollbar{width:3px;}
 .bpages::-webkit-scrollbar-thumb{background:var(--b2);}
 .bpage{display:none;padding:5px 6px;flex-direction:column;gap:3px;}
@@ -284,6 +287,7 @@ canvas{display:block;touch-action:none;}
         <button class="btab" data-tab="journal">📒 Журнал</button>
         <button class="btab" data-tab="backtest">🔬 Бэктест</button>
         <button class="btab" data-tab="levels">📊 Уровни</button>
+        <button class="panel-toggle" id="panelToggle" title="Свернуть/развернуть">▼</button>
       </div>
       <div class="bpages">
         <div class="bpage on" id="tab-context"></div>
@@ -536,6 +540,7 @@ async function loadAll(symbol, interval){
         _atr = calcATR(candles,14) || (candles[candles.length-1]?.c * 0.005) || 1;
         _htfAtr = calcATR(htfC,14) || _atr*3;
         zoom = 1; offsetX = 0;
+        if(htfC.length>=20){ detectHTFSwings(); analyzeHTF(); } // HTF один раз при старте
         computeAll();
         document.getElementById('loading').style.display='none';
       }
@@ -562,6 +567,7 @@ async function loadAll(symbol, interval){
 
       if(htfHist.length > 0){
         htfC = mergeCandles(htfHist, store[htfIv]||[]);
+        detectHTFSwings(); analyzeHTF(); // HTF считается один раз после загрузки истории
       }
 
       _atr = calcATR(candles,14) || _atr || candles[0]?.h*0.004 || 1;
@@ -608,10 +614,13 @@ async function loadAll(symbol, interval){
         if(target.length > 1000) target.shift();
       }
     };
+    const htfBefore = htfC.length;
     upd(store[interval]||[], candles);
     upd(store[htfIv]||[], htfC);
     upd(store[ltfIv]||[], ltfC);
     _atr = calcATR(candles,14) || _atr;
+    // HTF пересчитываем только при новой HTF свече, не при каждом тике
+    if(htfC.length !== htfBefore){ detectHTFSwings(); analyzeHTF(); }
     computeAll();
     safeRender();
   }
@@ -645,7 +654,7 @@ function computeAll(){if(btMode)return;
   // throttle: не чаще раза в 150ms (кроме первого запуска)
   const now=Date.now();
   if(candles.length>1 && now-_lastCompute<150)return;
-  _lastCompute=now;updateSessUI();computeVP();detectSwings();detectHTFSwings();detectLevels();detectLiquidity();detectOBs();detectFVG();analyzeHTF();detectRegime();detectCoreSignal();renderAll2();}
+  _lastCompute=now;updateSessUI();computeVP();detectSwings();detectHTFSwings();detectLevels();detectLiquidity();detectOBs();detectFVG();detectRegime();detectCoreSignal();renderAll2();} // analyzeHTF вызывается отдельно только при изменении htfC
 
 // ══════════════════════════════════════
 // VP
@@ -656,7 +665,7 @@ function computeVP(){if(!candles.length)return;const{s,e}=vr();let hi=-Infinity,
 // SWINGS
 // ══════════════════════════════════════
 function sw5(arr){const H=[],L=[];for(let i=2;i<arr.length-2;i++){const c=arr[i];if(c.h>arr[i-1].h&&c.h>arr[i-2].h&&c.h>arr[i+1].h&&c.h>arr[i+2].h)H.push({i,p:c.h});if(c.l<arr[i-1].l&&c.l<arr[i-2].l&&c.l<arr[i+1].l&&c.l<arr[i+2].l)L.push({i,p:c.l});}return{H,L};}
-function detectSwings(){const{s,e}=vr();const r=sw5(candles.slice(s,e+3));_H=r.H;_L=r.L;}
+function detectSwings(){const r=sw5(candles);_H=r.H;_L=r.L;} // все свечи, не только видимые
 function detectHTFSwings(){const r=sw5(htfC);_htfH=r.H;_htfL=r.L;}
 
 // ══════════════════════════════════════
@@ -1167,6 +1176,13 @@ document.getElementById('btnClean').addEventListener('click',function(){cleanMod
 document.querySelectorAll('.tf').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(b=>b.classList.remove('on'));btn.classList.add('on');tf=btn.dataset.tf;reload();});});
 document.getElementById('pairSel').addEventListener('change',e=>{sym=e.target.value;reload();});
 document.getElementById('btBtn').addEventListener('click',function(){btMode=!btMode;this.classList.toggle('on',btMode);if(!btMode){computeAll();}else{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));document.querySelector('[data-tab="backtest"]').classList.add('on');document.getElementById('tab-backtest').classList.add('on');}});
+// Панель свернуть/развернуть
+document.getElementById('panelToggle').addEventListener('click',function(){
+  const pages = document.querySelector('.bpages');
+  const collapsed = pages.classList.toggle('collapsed');
+  this.textContent = collapsed ? '▲' : '▼';
+});
+
 document.querySelectorAll('.btab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));btn.classList.add('on');document.getElementById('tab-'+btn.dataset.tab).classList.add('on');});});
 
 // ══════════════════════════════════════
