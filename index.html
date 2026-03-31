@@ -176,13 +176,15 @@ canvas{display:block;touch-action:none;}
 .panel-overlay-hdr{
   display:flex;
   align-items:center;
-  padding:8px 10px;
+  padding:6px 8px;
   background:var(--sf);
   border-bottom:1px solid var(--bd);
   flex-shrink:0;
-  gap:4px;
+  gap:2px;
+  overflow-x:auto;
 }
-.panel-overlay-hdr .btab{font-size:11px;padding:5px 8px;flex:none;}
+.panel-overlay-hdr::-webkit-scrollbar{height:0;}
+.panel-overlay-hdr .btab{font-size:12px;padding:6px 10px;flex:none;border-bottom:2px solid transparent;}
 .panel-overlay-close{
   margin-left:auto;
   background:none;border:none;
@@ -191,9 +193,29 @@ canvas{display:block;touch-action:none;}
   line-height:1;
 }
 .panel-overlay-close:hover{color:var(--rd);}
-.panel-overlay-body{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px;}
-.panel-overlay-body .bpage{display:none;flex-direction:column;gap:4px;}
+.panel-overlay-body{flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:5px;}
+.panel-overlay-body .bpage{display:none;flex-direction:column;gap:5px;}
 .panel-overlay-body .bpage.on{display:flex;}
+/* Крупнее всё в overlay */
+.panel-overlay-body .wait-card{padding:12px;}
+.panel-overlay-body .wc-title{font-size:14px!important;}
+.panel-overlay-body .wc-sub{font-size:11px!important;}
+.panel-overlay-body .sig-hdr{padding:8px 10px;}
+.panel-overlay-body .sig-grade{font-size:20px!important;}
+.panel-overlay-body .sig-dir{font-size:13px!important;}
+.panel-overlay-body .sbs-row{gap:5px;padding:5px 0;}
+.panel-overlay-body .cr-lbl{font-size:10px!important;}
+.panel-overlay-body .cr-val{font-size:13px!important;font-weight:700;}
+.panel-overlay-body .core-row{font-size:11px!important;padding:4px 0;}
+.panel-overlay-body .ctx-row{font-size:11px!important;line-height:1.8;}
+.panel-overlay-body .ctx-title{font-size:10px!important;}
+.panel-overlay-body .je{padding:6px 8px;}
+.panel-overlay-body .je-info{font-size:11px!important;}
+.panel-overlay-body b{font-size:12px;}
+/* Уровни в overlay */
+.panel-overlay-body [style*="font-size:9.5px"]{font-size:12px!important;}
+.panel-overlay-body [style*="font-size:9px"]{font-size:11px!important;}
+.panel-overlay-body [style*="font-size:8px"]{font-size:10px!important;}
 .bpages::-webkit-scrollbar{width:3px;}
 .bpages::-webkit-scrollbar-thumb{background:var(--b2);}
 .bpage{display:none;padding:5px 6px;flex-direction:column;gap:3px;}
@@ -1020,7 +1042,7 @@ function renderFocus(sig,waitMsg=null){
 // ══════════════════════════════════════
 // RENDER CONTEXT TAB
 // ══════════════════════════════════════
-function renderContext(){
+function renderContext(forOverlay=false){
   const n=candles.length;if(!n)return;
   const cls=candles.map(c=>c.c);
   const r=calcRSI(cls.slice(Math.max(0,n-50)));
@@ -1034,7 +1056,7 @@ function renderContext(){
   const h24=signalHistory.filter(s=>Date.now()-s.time<86400000);
   const freqColor=h24.length>6?'var(--or)':h24.length>3?'var(--gold)':'var(--gn)';
 
-  document.getElementById('tab-context').innerHTML=`
+  const ctxHTML=`
     <div class="ctx-block">
       <div class="ctx-title">HTF контекст — фильтр</div>
       <div class="ctx-row">Тренд: <b>${htfCtx?.trend||'--'}</b> | P/D: <b>${htfCtx?.pd||'--'}</b> | RSI(HTF): ${htfCtx?.rsi?.toFixed(0)||'--'}</div>
@@ -1056,6 +1078,11 @@ function renderContext(){
       <div class="freq-bar"><div class="freq-fill" style="width:${Math.min(100,h24.length/10*100)}%;background:${freqColor}"></div></div>
       <div class="ctx-row" style="font-size:8px;color:var(--mu)">Норма: 2–5 в день. &gt;6 = рынок шумный, будь осторожен.</div>
     </div>`;
+  document.getElementById('tab-context').innerHTML = ctxHTML;
+  if(forOverlay){
+    const o = document.getElementById('otab-context2');
+    if(o) o.innerHTML = ctxHTML;
+  }
 }
 
 // ══════════════════════════════════════
@@ -1069,7 +1096,7 @@ function openLog(){
   document.getElementById('tab-journal').classList.add('on');
   renderJournal(true);
 }
-function renderJournal(showForm=false){
+function renderJournal(showForm=false,forOverlay=false){
   const el=document.getElementById('tab-journal');
   const stats=jStats();
   let html='';
@@ -1112,6 +1139,7 @@ function renderJournal(showForm=false){
   html+=`<div class="jdiscl">⚠ Статистика значима после ~100 сделок. Expectancy = WR×AvgRR−(1−WR). ⏱ = среднее время до TP/SL.</div>`;
   if(journal.length)html+=`<button class="logbtn" onclick="if(confirm('Очистить?')){journal=[];saveJ();renderJournal();}">🗑 Очистить</button>`;
   el.innerHTML=html;
+  if(forOverlay){ const o=document.getElementById('otab-journal'); if(o) o.innerHTML=html; }
   // Sparkline
   if(stats?.equity?.length>1)requestAnimationFrame(()=>{
     const cv=document.getElementById('eqCv');if(!cv)return;
@@ -1205,7 +1233,9 @@ function initBT(){const el=document.getElementById('tab-backtest');el.innerHTML=
 // ══════════════════════════════════════
 // LEVELS TAB
 // ══════════════════════════════════════
-function renderLevels(){if(!candles.length)return;const lc=candles[candles.length-1].c;const all=[...(vpData?[{l:'POC',p:vpData.poc,c:'var(--gold)',n:'POC'},{l:'VAH',p:vpData.vah,c:'var(--pu)',n:'VAH'},{l:'VAL',p:vpData.val,c:'var(--pu)',n:'VAL'}]:[]),...autoLvls.map(o=>({l:o.type==='support'?'SUP':'RES',p:o.price,c:o.type==='support'?'var(--gn)':'var(--rd)',n:`T:${o.tests}R:${o.rej}`})),...orderBlocks.map(o=>({l:o.strong?'●OB':'○OB',p:(o.hi+o.lo)/2,c:o.type==='bullish'?'var(--gn)':'var(--rd)',n:`${fp(o.lo)}–${fp(o.hi)} ${o.age}b`})),...liqPools.map(l=>({l:l.swept?`💧${l.sweepAge}b`:l.type==='buyside'?'BSL':'SSL',p:l.price,c:l.swept?'var(--pu)':l.type==='buyside'?'var(--cy)':'var(--or)',n:''})),...fvgList.filter(f=>!f.mitigated).map(f=>({l:f.type==='bullish'?'FVG↑':'FVG↓',p:(f.top+f.bottom)/2,c:f.type==='bullish'?'rgba(14,203,129,.8)':'rgba(246,70,93,.8)',n:`${fp(f.bottom)}–${fp(f.top)}`}))].sort((a,b)=>Math.abs(a.p-lc)-Math.abs(b.p-lc));document.getElementById('tab-levels').innerHTML=all.slice(0,14).map(l=>`<div style="display:flex;align-items:flex-start;gap:5px;padding:3px 6px;background:var(--s2);border-radius:4px;border-left:2px solid ${l.c};margin-bottom:2px"><span style="font-size:9px;color:${l.c};font-weight:700;min-width:40px;flex-shrink:0">${l.l}</span><div><div style="font-size:9.5px"><b>${fp(l.p)}</b> ${l.n}</div><div style="font-size:8px;color:var(--mu)">${((Math.abs(l.p-lc)/lc)*100).toFixed(2)}%</div></div></div>`).join('');}
+function renderLevels(forOverlay=false){if(!candles.length)return;const lc=candles[candles.length-1].c;const all=[...(vpData?[{l:'POC',p:vpData.poc,c:'var(--gold)',n:'POC'},{l:'VAH',p:vpData.vah,c:'var(--pu)',n:'VAH'},{l:'VAL',p:vpData.val,c:'var(--pu)',n:'VAL'}]:[]),...autoLvls.map(o=>({l:o.type==='support'?'SUP':'RES',p:o.price,c:o.type==='support'?'var(--gn)':'var(--rd)',n:`T:${o.tests}R:${o.rej}`})),...orderBlocks.map(o=>({l:o.strong?'●OB':'○OB',p:(o.hi+o.lo)/2,c:o.type==='bullish'?'var(--gn)':'var(--rd)',n:`${fp(o.lo)}–${fp(o.hi)} ${o.age}b`})),...liqPools.map(l=>({l:l.swept?`💧${l.sweepAge}b`:l.type==='buyside'?'BSL':'SSL',p:l.price,c:l.swept?'var(--pu)':l.type==='buyside'?'var(--cy)':'var(--or)',n:''})),...fvgList.filter(f=>!f.mitigated).map(f=>({l:f.type==='bullish'?'FVG↑':'FVG↓',p:(f.top+f.bottom)/2,c:f.type==='bullish'?'rgba(14,203,129,.8)':'rgba(246,70,93,.8)',n:`${fp(f.bottom)}–${fp(f.top)}`}))].sort((a,b)=>Math.abs(a.p-lc)-Math.abs(b.p-lc));const lvlHTML=all.slice(0,14).map(l=>`<div style="display:flex;align-items:flex-start;gap:5px;padding:3px 6px;background:var(--s2);border-radius:4px;border-left:2px solid ${l.c};margin-bottom:2px"><span style="font-size:9px;color:${l.c};font-weight:700;min-width:40px;flex-shrink:0">${l.l}</span><div><div style="font-size:9.5px"><b>${fp(l.p)}</b> ${l.n}</div><div style="font-size:8px;color:var(--mu)">${((Math.abs(l.p-lc)/lc)*100).toFixed(2)}%</div></div></div>`).join('');
+  document.getElementById('tab-levels').innerHTML = lvlHTML;
+  if(forOverlay){ const o=document.getElementById('otab-levels'); if(o) o.innerHTML=lvlHTML; }}
 
 // ══════════════════════════════════════
 // CHART DRAW
@@ -1302,35 +1332,15 @@ function closePanel(){
 }
 
 function syncOverlayContent(){
-  // Копируем HTML из основных вкладок в overlay
-  const map = {
-    'context':  ['tab-context','focusArea'],
-    'context2': ['tab-context'],
-    'journal':  ['tab-journal'],
-    'levels':   ['tab-levels'],
-    'backtest': ['tab-backtest'],
-  };
-  // focusArea (сигнал) → otab-context
+  // Вызываем render-функции напрямую с флагом overlay
+  renderContext(true);
+  renderLevels(true);
+  renderJournal(false, true);
+  // focusArea просто копируем (там нет интерактивных кнопок кроме logbtn)
   const focusEl = document.getElementById('focusArea');
   const otabCtx = document.getElementById('otab-context');
   if(focusEl && otabCtx) otabCtx.innerHTML = focusEl.innerHTML;
-
-  // context (рыночный контекст) → otab-context2
-  const ctxEl = document.getElementById('tab-context');
-  const otabCtx2 = document.getElementById('otab-context2');
-  if(ctxEl && otabCtx2) otabCtx2.innerHTML = ctxEl.innerHTML;
-
-  // journal → otab-journal
-  const jEl = document.getElementById('tab-journal');
-  const oJEl = document.getElementById('otab-journal');
-  if(jEl && oJEl) oJEl.innerHTML = jEl.innerHTML;
-
-  // levels → otab-levels
-  const lEl = document.getElementById('tab-levels');
-  const oLEl = document.getElementById('otab-levels');
-  if(lEl && oLEl) oLEl.innerHTML = lEl.innerHTML;
-
-  // backtest → otab-backtest
+  // backtest — просто копия
   const bEl = document.getElementById('tab-backtest');
   const oBEl = document.getElementById('otab-backtest');
   if(bEl && oBEl) oBEl.innerHTML = bEl.innerHTML;
