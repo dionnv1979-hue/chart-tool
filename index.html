@@ -1308,39 +1308,31 @@ let _overlayOpen = false;
 
 // Рендерим контент нужной вкладки overlay по требованию
 function renderOverlayTab(id){
-  switch(id){
-    case 'context':
-      // Сигнал — копируем focusArea (всегда актуален)
-      const fa = document.getElementById('focusArea');
-      const oc = document.getElementById('otab-context');
-      if(fa && oc) oc.innerHTML = fa.innerHTML;
-      break;
-    case 'context2':
-      // Рендерим контекст и копируем в otab-context2
-      renderContext();
-      const oc2 = document.getElementById('otab-context2');
-      const tc = document.getElementById('tab-context');
-      if(oc2 && tc) oc2.innerHTML = tc.innerHTML;
-      break;
-    case 'journal':
-      // Рендерим журнал и копируем в otab-journal
-      renderJournal(false);
-      const oj = document.getElementById('otab-journal');
-      const tj = document.getElementById('tab-journal');
-      if(oj && tj) oj.innerHTML = tj.innerHTML;
-      break;
-    case 'levels':
-      // Рендерим уровни и копируем в otab-levels
-      renderLevels();
-      const ol = document.getElementById('otab-levels');
-      const tl = document.getElementById('tab-levels');
-      if(ol && tl) ol.innerHTML = tl.innerHTML;
-      break;
-    case 'backtest':
-      const bt = document.getElementById('tab-backtest');
-      const ob = document.getElementById('otab-backtest');
-      if(bt && ob) ob.innerHTML = bt.innerHTML || '<div style="padding:12px;color:var(--mu);font-size:11px">Нажми 🔬 Бэктест в основном меню для запуска</div>';
-      break;
+  // Получаем элементы без const внутри switch (избегаем SyntaxError в Android WebView)
+  var src, dst;
+  if(id === 'context'){
+    src = document.getElementById('focusArea');
+    dst = document.getElementById('otab-context');
+    if(src && dst) dst.innerHTML = src.innerHTML;
+  } else if(id === 'context2'){
+    renderContext();
+    src = document.getElementById('tab-context');
+    dst = document.getElementById('otab-context2');
+    if(src && dst) dst.innerHTML = src.innerHTML;
+  } else if(id === 'journal'){
+    renderJournal(false);
+    src = document.getElementById('tab-journal');
+    dst = document.getElementById('otab-journal');
+    if(src && dst) dst.innerHTML = src.innerHTML;
+  } else if(id === 'levels'){
+    renderLevels();
+    src = document.getElementById('tab-levels');
+    dst = document.getElementById('otab-levels');
+    if(src && dst) dst.innerHTML = src.innerHTML;
+  } else if(id === 'backtest'){
+    src = document.getElementById('tab-backtest');
+    dst = document.getElementById('otab-backtest');
+    if(src && dst) dst.innerHTML = src.innerHTML || '<div style="padding:12px;color:var(--mu);font-size:11px">Запусти бэктест через основное меню</div>';
   }
 }
 
