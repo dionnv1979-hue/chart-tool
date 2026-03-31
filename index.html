@@ -15,13 +15,37 @@
   --bl:#3b82f6;--pu:#a855f7;--cy:#06b6d4;--or:#f97316;
 }
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-family:'JetBrains Mono',monospace;touch-action:none;}
-@media(max-width:480px){.hdr{padding:3px 5px;gap:3px;}.hprice{font-size:13px;}.tf{padding:2px 5px;font-size:9px;}}
+@media(max-width:480px){
+  .hdr{padding:2px 4px;gap:2px;row-gap:1px;}
+  .hprice{font-size:12px;}
+  .tf{padding:1px 4px;font-size:9px;}
+  .hb{font-size:8px;padding:1px 4px;}
+  .logo{font-size:10px;}
+  .pair-sel{font-size:10px;padding:1px 3px;}
+  .tbar .tb2{padding:4px 6px;font-size:10px;}
+  .vbar{height:26px;}
+  .bpages{max-height:120px;}
+  .focus{padding:3px 5px;}
+  .btab{font-size:9px;padding:3px 4px;}
+}
 @media(min-width:900px){
   .main-layout{flex-direction:row!important;}
-  .right-col{width:320px;flex-shrink:0;border-left:1px solid var(--bd);display:flex!important;flex-direction:column;}
+  .right-col{width:300px;flex-shrink:0;border-left:1px solid var(--bd);display:flex!important;flex-direction:column;}
   .right-col .focus{border-top:none;}
   .right-col .bot{flex:1;display:flex;flex-direction:column;}
   .right-col .bpages{flex:1;max-height:none;}
+}
+/* Fold / мобильный — панель снизу */
+@media(max-width:899px){
+  .right-col{display:flex;flex-direction:column;flex-shrink:0;}
+  .right-col .focus{border-top:1px solid var(--bd);font-size:9px;}
+  .sig-card{font-size:9px;}
+  .sig-hdr{padding:4px 7px;}
+  .sig-body{padding:3px 6px;}
+  .sbs-row{gap:3px;}
+  .cr-lbl{font-size:8px;}
+  .cr-val{font-size:9px;}
+  .sig-action{padding:2px 7px 4px;font-size:8px;}
 }
 
 /* HEADER */
@@ -66,7 +90,7 @@ canvas{display:block;touch-action:none;}
 .right-col{display:none;}
 
 /* FOCUS CARD */
-.focus{padding:5px 6px;background:var(--sf);border-top:1px solid var(--bd);flex-shrink:0;}
+.focus{padding:4px 6px;background:var(--sf);border-top:1px solid var(--bd);flex-shrink:0;overflow:auto;}
 
 /* Wait state */
 .wait-card{display:flex;align-items:flex-start;gap:10px;padding:7px 10px;background:var(--s2);border-radius:5px;border:1px solid var(--b2);}
@@ -1169,18 +1193,56 @@ cc.addEventListener('wheel',e=>{e.preventDefault();const r=cc.getBoundingClientR
 // ══════════════════════════════════════
 // CONTROLS
 // ══════════════════════════════════════
-function applyLayout(){const ml=document.getElementById('mainLayout'),rc=document.getElementById('rightCol');if(window.innerWidth>=900){ml.style.flexDirection='row';rc.style.display='flex';}else{ml.style.flexDirection='column';rc.style.display='none';}}
+function applyLayout(){
+  const ml=document.getElementById('mainLayout');
+  const rc=document.getElementById('rightCol');
+  const W=window.innerWidth, H=window.innerHeight;
+  if(W>=900){
+    // Desktop / Fold развёрнутый: боковая панель
+    ml.style.flexDirection='row';
+    rc.style.cssText='display:flex;width:300px;flex-shrink:0;border-left:1px solid var(--bd);flex-direction:column;';
+    rc.querySelector('.focus').style.maxHeight='';
+    rc.querySelector('.bpages').style.maxHeight='';
+  } else {
+    // Мобильный / Fold сложенный: панель снизу, ограничена высотой
+    ml.style.flexDirection='column';
+    rc.style.cssText='display:flex;flex-direction:column;flex-shrink:0;border-top:1px solid var(--bd);';
+    // Ограничиваем высоту панели — не более 35% экрана
+    const maxH = Math.floor(H * 0.35);
+    rc.querySelector('.focus').style.maxHeight = Math.floor(maxH*0.5)+'px';
+    rc.querySelector('.focus').style.overflow = 'auto';
+    rc.querySelector('.bpages').style.maxHeight = Math.floor(maxH*0.5)+'px';
+  }
+}
 document.querySelectorAll('[data-tool]').forEach(btn=>{btn.addEventListener('click',()=>{drawTool=btn.dataset.tool;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.remove('on'));btn.classList.add('on');const h=document.getElementById('dhint');if(drawTool==='cursor')h.classList.remove('on');else{h.classList.add('on');h.textContent={support:'→ SUP',resistance:'→ RES',trendline:'→ ╱',rect:'→ ▭',fib:'→ φ'}[drawTool]||'Draw';}});});
 document.getElementById('btnClear').addEventListener('click',()=>{drawings=[];safeRender();});
 document.getElementById('btnClean').addEventListener('click',function(){cleanMode=!cleanMode;this.classList.toggle('on',cleanMode);safeRender();});
 document.querySelectorAll('.tf').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(b=>b.classList.remove('on'));btn.classList.add('on');tf=btn.dataset.tf;reload();});});
 document.getElementById('pairSel').addEventListener('change',e=>{sym=e.target.value;reload();});
 document.getElementById('btBtn').addEventListener('click',function(){btMode=!btMode;this.classList.toggle('on',btMode);if(!btMode){computeAll();}else{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));document.querySelector('[data-tab="backtest"]').classList.add('on');document.getElementById('tab-backtest').classList.add('on');}});
-// Панель свернуть/развернуть
+// Панель свернуть/развернуть (на мобильном — вся правая колонка)
 document.getElementById('panelToggle').addEventListener('click',function(){
-  const pages = document.querySelector('.bpages');
-  const collapsed = pages.classList.toggle('collapsed');
-  this.textContent = collapsed ? '▲' : '▼';
+  const rc = document.getElementById('rightCol');
+  const focus = rc.querySelector('.focus');
+  const bot = rc.querySelector('.bot');
+  const pages = rc.querySelector('.bpages');
+  if(this.dataset.collapsed==='1'){
+    this.dataset.collapsed='0';
+    this.textContent='▼';
+    if(focus) focus.style.display='';
+    if(pages) pages.style.maxHeight='';
+    if(bot) bot.style.display='';
+  } else {
+    this.dataset.collapsed='1';
+    this.textContent='▲';
+    // на мобильном скрываем только bpages, focus оставляем
+    if(window.innerWidth<900){
+      if(pages) pages.style.maxHeight='0';
+    } else {
+      if(focus) focus.style.display='none';
+      if(pages) pages.style.maxHeight='0';
+    }
+  }
 });
 
 document.querySelectorAll('.btab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('.bpage').forEach(p=>p.classList.remove('on'));btn.classList.add('on');document.getElementById('tab-'+btn.dataset.tab).classList.add('on');});});
