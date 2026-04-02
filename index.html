@@ -539,7 +539,7 @@ async function loadData(){
       ?await fetchMaxCandles(symbol,currentTF)
       :await fetchBybitCandles(symbol,currentTF,parseInt(limitVal));
     if(!data||!data.length) throw new Error('Нет данных для этой пары/интервала');
-    candles=data; viewOffset=Math.max(0,candles.length-120); viewScale=1; isAutoScroll=true;
+    candles=data; viewOffset=Math.max(0,candles.length-getVisibleCount()); viewScale=1; isAutoScroll=true;
     analyzeCache={len:-1,lastClose:-1,result:null}; lastSignal=null;
     const last=candles[candles.length-1],first=candles[0];
     const change=((last.close-first.open)/first.open*100).toFixed(2);
@@ -1258,6 +1258,7 @@ function setupChartInteraction(){
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
     viewScale=Math.max(0.05,Math.min(15,viewScale*(e.deltaY>0?0.95:1.05)));
+    viewOffset=Math.max(0,Math.min(candles.length-getVisibleCount(),viewOffset));
     render();
   },{passive:false});
   canvas.addEventListener('mousedown',e=>{
@@ -1271,7 +1272,7 @@ function setupChartInteraction(){
     if(isDragging){
       const cw=Math.max(1.5,Math.min(20,el('canvasWrap').clientWidth/(candles.length*viewScale)));
       const s=cw+Math.max(0.4,cw*0.15);
-      viewOffset=Math.max(0,Math.min(candles.length-50,dragStartOffset-(e.clientX-dragStartX)/s));
+      viewOffset=Math.max(0,Math.min(candles.length-getVisibleCount(),dragStartOffset-(e.clientX-dragStartX)/s));
       render();
     }
     if(candles.length&&window._chartState){
@@ -1341,7 +1342,7 @@ function setupChartInteraction(){
     const touch = e.touches[0];
     const cw = Math.max(1.5, Math.min(20, el('canvasWrap').clientWidth / (candles.length * viewScale)));
     const s = cw + Math.max(0.4, cw * 0.15);
-    viewOffset = Math.max(0, Math.min(candles.length - 50, dragStartOffset - (touch.clientX - dragStartX) / s));
+    viewOffset = Math.max(0, Math.min(candles.length-getVisibleCount(), dragStartOffset - (touch.clientX - dragStartX) / s));
     render();
   }, { passive: false });
 
@@ -1381,9 +1382,16 @@ function fmtPrice(p){
   if(p>1000)return p.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
   if(p>1)return p.toFixed(4);return p.toFixed(6);
 }
+function getVisibleCount(){
+  const wrap=el('canvasWrap');
+  if(!wrap||!candles.length) return 120;
+  const cw=Math.max(1.5,Math.min(20,wrap.clientWidth/(candles.length*viewScale)));
+  const step=cw+Math.max(0.4,cw*0.15);
+  return Math.ceil(wrap.clientWidth/step)+2;
+}
 function snapToEnd(){
   isAutoScroll=true;
-  viewOffset=Math.max(0,candles.length-120);
+  viewOffset=Math.max(0,candles.length-getVisibleCount());
   render();
 }
 function el(id){return document.getElementById(id);}
@@ -1520,7 +1528,7 @@ function updateLiveCandle(candle) {
 
   // Auto-scroll to follow latest candle (only when user isn't dragging)
   if(isAutoScroll && !isDragging) {
-    viewOffset = Math.max(0, candles.length - 120);
+    viewOffset = Math.max(0, candles.length - getVisibleCount());
   }
 
   // Update header price live
