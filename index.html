@@ -141,6 +141,28 @@ select:hover{border-color:var(--accent);}
 .api-loading{color:var(--yellow);font-weight:700;}
 .status-dot-err{width:6px;height:6px;border-radius:50%;background:var(--bear);display:inline-block;box-shadow:0 0 6px var(--bear);}
 .status-dot-loading{width:6px;height:6px;border-radius:50%;background:var(--yellow);display:inline-block;box-shadow:0 0 6px var(--yellow);animation:pulse 0.5s infinite;}
+/* FUTURES */
+.lev-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.lev-label{font-size:10px;color:var(--text2);min-width:48px;}
+.lev-slider{flex:1;accent-color:var(--accent);cursor:pointer;}
+.lev-val{font-size:13px;font-weight:700;color:var(--accent);min-width:36px;text-align:right;}
+.dir-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px;}
+.dir-btn{padding:5px 0;border-radius:4px;border:1px solid var(--border);background:transparent;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center;}
+.dir-btn.long-btn.active{background:#22c55e;border-color:#22c55e;color:#000;}
+.dir-btn.short-btn.active{background:#ef4444;border-color:#ef4444;color:#fff;}
+.dir-btn.auto-btn.active{background:var(--accent2);border-color:var(--accent2);color:#fff;}
+.dir-btn:not(.active){color:var(--text2);}
+.dir-btn.long-btn:not(.active):hover{border-color:#22c55e;color:#22c55e;}
+.dir-btn.short-btn:not(.active):hover{border-color:#ef4444;color:#ef4444;}
+.dir-btn.auto-btn:not(.active):hover{border-color:var(--accent2);color:var(--accent2);}
+.fut-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;}
+.fut-item{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 8px;}
+.fut-lbl{font-size:9px;color:var(--text2);margin-bottom:2px;}
+.fut-val{font-size:11px;font-weight:700;}
+.liq-warn{font-size:10px;padding:5px 8px;border-radius:4px;margin-top:6px;display:none;}
+.liq-warn.show{display:block;}
+.liq-warn.danger{background:rgba(255,56,96,0.1);border:1px solid rgba(255,56,96,0.3);color:var(--bear);}
+.liq-warn.caution{background:rgba(255,214,10,0.08);border:1px solid rgba(255,214,10,0.2);color:var(--yellow);}
 </style>
 </head>
 <body>
@@ -242,6 +264,38 @@ select:hover{border-color:var(--accent);}
       </div>
     </div>
 
+    <!-- FUTURES PANEL -->
+    <div class="panel-section">
+      <div class="section-title">Фьючерсы</div>
+      <!-- Direction -->
+      <div class="dir-row">
+        <button class="dir-btn long-btn" id="dirLong" onclick="setDirection('long')">▲ ЛОНГ</button>
+        <button class="dir-btn auto-btn active" id="dirAuto" onclick="setDirection('auto')">⚡ АВТО</button>
+        <button class="dir-btn short-btn" id="dirShort" onclick="setDirection('short')">▼ ШОРТ</button>
+      </div>
+      <!-- Leverage slider -->
+      <div class="lev-row">
+        <span class="lev-label">ПЛЕЧО</span>
+        <input type="range" class="lev-slider" id="leverageSlider" min="1" max="100" step="1" value="10" oninput="onLevChange()">
+        <span class="lev-val" id="levDisplay">10×</span>
+      </div>
+      <div class="lev-row">
+        <span class="lev-label">ДЕПОЗИТ</span>
+        <input type="range" class="lev-slider" id="marginSlider" min="1" max="100" step="1" value="10" oninput="onLevChange()">
+        <span class="lev-val" id="marginDisplay">10%</span>
+      </div>
+      <!-- Calculated position -->
+      <div class="fut-grid">
+        <div class="fut-item"><div class="fut-lbl">ПОЗИЦИЯ ($)</div><div class="fut-val" id="futPositionSize">—</div></div>
+        <div class="fut-item"><div class="fut-lbl">МАРЖА ($)</div><div class="fut-val" id="futMargin">—</div></div>
+        <div class="fut-item"><div class="fut-lbl">ЛИКВИДАЦИЯ</div><div class="fut-val" style="color:var(--bear);" id="futLiqPrice">—</div></div>
+        <div class="fut-item"><div class="fut-lbl">СТАВКА ФУНД.</div><div class="fut-val" id="futFunding">—</div></div>
+        <div class="fut-item"><div class="fut-lbl">PnL при SL</div><div class="fut-val" style="color:var(--bear);" id="futPnlSl">—</div></div>
+        <div class="fut-item"><div class="fut-lbl">PnL при TP</div><div class="fut-val" style="color:var(--bull);" id="futPnlTp">—</div></div>
+      </div>
+      <div class="liq-warn" id="liqWarn"></div>
+    </div>
+
     <div class="panel-section">
       <div class="section-title">Контекст рынка</div>
       <div class="ctx-grid">
@@ -335,6 +389,11 @@ let isAutoScroll=true;   // true = chart follows latest candle
 let analyzeCache = { len: -1, lastClose: -1, result: null };
 let lastSignal = null;
 
+// ── FUTURES STATE ──────────────────────────────
+let leverage = 10;        // 1–100×
+let marginPct = 10;       // % of START_CAPITAL to use as margin
+let tradeDirection = 'auto'; // 'long' | 'short' | 'auto'
+
 // ═══════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════
@@ -344,7 +403,8 @@ function saveSettings(){
       symbol:document.getElementById('symbolSelect').value,
       tf:currentTF,
       limit:document.getElementById('limitSelect').value,
-      strategy:currentStrategy, layers
+      strategy:currentStrategy, layers,
+      leverage, marginPct, tradeDirection
     }));
     log('💾 Настройки сохранены','var(--accent)');
   }catch(e){}
@@ -357,13 +417,16 @@ function loadSettings(){
     if(s.strategy) setStrategy(s.strategy,false);
     if(s.layers) Object.keys(s.layers).forEach(k=>{
       layers[k]=s.layers[k];
-      const el=document.getElementById('toggle'+k[0].toUpperCase()+k.slice(1));
-      if(el) el.classList.toggle('on',layers[k]);
+      const el2=document.getElementById('toggle'+k[0].toUpperCase()+k.slice(1));
+      if(el2) el2.classList.toggle('on',layers[k]);
     });
     if(s.tf){
       currentTF=s.tf;
       document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',b.dataset.tf===currentTF));
     }
+    if(s.leverage){ leverage=s.leverage; el('leverageSlider').value=leverage; el('levDisplay').textContent=leverage+'×'; }
+    if(s.marginPct){ marginPct=s.marginPct; el('marginSlider').value=marginPct; el('marginDisplay').textContent=marginPct+'%'; }
+    if(s.tradeDirection) setDirection(s.tradeDirection);
   }catch(e){}
 }
 
@@ -375,6 +438,96 @@ function log(msg,color='var(--text2)'){
   logLines.unshift(`<span style="color:${color}">[${now}]</span> ${msg}`);
   if(logLines.length>150) logLines.pop();
   document.getElementById('logContent').innerHTML=logLines.join('<br>');
+}
+
+// ═══════════════════════════════════
+// FUTURES
+// ═══════════════════════════════════
+function setDirection(dir){
+  tradeDirection=dir;
+  ['dirLong','dirAuto','dirShort'].forEach(id=>el(id).classList.remove('active'));
+  el({long:'dirLong',auto:'dirAuto',short:'dirShort'}[dir]).classList.add('active');
+  if(candles.length) updateFuturesPanel();
+}
+
+function onLevChange(){
+  leverage=parseInt(el('leverageSlider').value);
+  marginPct=parseInt(el('marginSlider').value);
+  el('levDisplay').textContent=leverage+'×';
+  el('marginDisplay').textContent=marginPct+'%';
+  if(candles.length) updateFuturesPanel();
+}
+
+// Bybit linear futures: liquidation price calculation
+// Long liq  = entry * (1 - 1/leverage + maintenanceMarginRate)
+// Short liq = entry * (1 + 1/leverage - maintenanceMarginRate)
+const MAINT_MARGIN_RATE = 0.005; // 0.5% Bybit default tier 1
+
+function calcLiquidation(entry, lev, dir){
+  if(dir==='long')  return entry*(1 - 1/lev + MAINT_MARGIN_RATE);
+  if(dir==='short') return entry*(1 + 1/lev - MAINT_MARGIN_RATE);
+  return null;
+}
+
+function calcFuturesPnl(entry, exitPrice, dir, positionSize){
+  // PnL = (exit - entry) * size for LONG, (entry - exit) * size for SHORT
+  const priceDiff = dir==='long' ? exitPrice-entry : entry-exitPrice;
+  return priceDiff * positionSize;
+}
+
+function updateFuturesPanel(entry, sl, tp1, signal){
+  if(!candles.length) return;
+  const price = entry || candles[candles.length-1].close;
+  const capital = START_CAPITAL;
+  const margin = capital * (marginPct/100);
+  const positionSize = (margin * leverage) / price; // contracts
+  const positionUsd = margin * leverage;
+
+  // Direction: auto uses signal direction
+  let dir = tradeDirection;
+  if(dir==='auto') dir = signal==='sell'?'short':'long';
+
+  const liqPrice = calcLiquidation(price, leverage, dir);
+
+  // Distance to liquidation %
+  const liqDist = Math.abs(liqPrice - price) / price * 100;
+
+  // Fee on full position (entry + exit)
+  const totalFee = positionUsd * FEE * 2;
+
+  // PnL at SL / TP
+  let pnlSl = null, pnlTp = null;
+  if(sl){
+    pnlSl = calcFuturesPnl(price, sl, dir, positionSize) - totalFee;
+    pnlSl = pnlSl / margin * 100; // as % of margin
+  }
+  if(tp1){
+    pnlTp = calcFuturesPnl(price, tp1, dir, positionSize) - totalFee;
+    pnlTp = pnlTp / margin * 100;
+  }
+
+  el('futPositionSize').textContent = '$'+positionUsd.toLocaleString('en',{maximumFractionDigits:0});
+  el('futMargin').textContent = '$'+margin.toFixed(0);
+  el('futLiqPrice').textContent = fmtPrice(liqPrice);
+  el('futFunding').textContent = '0.010%'; // placeholder — fetch separately if needed
+
+  if(pnlSl!==null) el('futPnlSl').textContent = (pnlSl>=0?'+':'')+pnlSl.toFixed(1)+'%';
+  else el('futPnlSl').textContent = '—';
+  if(pnlTp!==null) el('futPnlTp').textContent = (pnlTp>=0?'+':'')+pnlTp.toFixed(1)+'%';
+  else el('futPnlTp').textContent = '—';
+
+  // Liquidation warning
+  const warn = el('liqWarn');
+  if(liqDist < 2){
+    warn.className='liq-warn show danger';
+    warn.textContent=`⚠️ Ликвидация очень близко! ${liqDist.toFixed(2)}% от цены — снизьте плечо`;
+  } else if(liqDist < 5){
+    warn.className='liq-warn show caution';
+    warn.textContent=`⚠️ Ликвидация на расстоянии ${liqDist.toFixed(2)}% — будьте осторожны`;
+  } else {
+    warn.className='liq-warn';
+    warn.textContent='';
+  }
 }
 
 // ═══════════════════════════════════
@@ -755,6 +908,78 @@ function computeProb(idx,closes,e20arr,e50arr,e200arr,rsiArr,bband,macdData,atr,
 }
 
 // ═══════════════════════════════════
+// HARD STRATEGY — trend pullback v2
+// ═══════════════════════════════════
+function computeSignal(idx, closes, e20, e50, e200, rsiArr, atr, candlesArr){
+  const price=closes[idx];
+  const last=candlesArr[idx];
+
+  // Guard: need enough history for slope (idx-5) and volume (idx-20)
+  if(idx<20||!price||!e20[idx]||!e50[idx]||!e200[idx]||!e200[idx-5]||!rsiArr[idx])
+    return{signal:'wait',reason:'нет данных'};
+
+  const atrPct=(atr/price)*100;
+  if(atrPct>4) return{signal:'wait',reason:`волатильность ${atrPct.toFixed(1)}% > 4%`};
+
+  // ── Fix 6: session filter (UTC 7–20 = Europe+US active) ──
+  const hour=new Date(last.time).getUTCHours();
+  const sessionOk=hour>=7&&hour<=20;
+  if(!sessionOk) return{signal:'wait',reason:`вне сессии (UTC ${hour}:xx)`};
+
+  // ── Fix 2: EMA200 slope over 5 bars ──
+  const ema200Slope=e200[idx]-e200[idx-5];
+  const strongTrendUp  =ema200Slope>0;
+  const strongTrendDown=ema200Slope<0;
+  const trendUp  =price>e200[idx]&&strongTrendUp;
+  const trendDown=price<e200[idx]&&strongTrendDown;
+
+  const momentumUp  =e20[idx]>e50[idx];
+  const momentumDown=e20[idx]<e50[idx];
+
+  // ── Fix 1: tight pullback zone ±0.3% ──
+  const pullbackLong =price<=e20[idx]*1.003;
+  const pullbackShort=price>=e20[idx]*0.997;
+
+  const bullishCandle=last.close>last.open;
+  const bearishCandle=last.close<last.open;
+
+  const rsiV=rsiArr[idx];
+
+  // ── Fix 3: volume filter ──
+  const vol=last.volume;
+  const avgVol=candlesArr.slice(idx-20,idx).reduce((a,c)=>a+c.volume,0)/20;
+  const volumeOk=vol>avgVol;
+
+  // ── Fix 4: adaptive SL/TP multipliers (used by analyze for display) ──
+  // stored on result so analyze() and backtest can consume
+  const isTrend=marketRegime==='trend';
+  const slMult=isTrend?1.8:1.2;
+  const tpMult=isTrend?3.5:2.0;
+
+  // 📈 LONG
+  if(trendUp&&momentumUp&&pullbackLong&&rsiV>45&&bullishCandle&&volumeOk)
+    return{signal:'buy',
+      reason:`trend pullback L | slope:+${ema200Slope.toFixed(1)} RSI:${rsiV.toFixed(0)} vol:${(vol/avgVol).toFixed(1)}×`,
+      slMult,tpMult};
+
+  // 📉 SHORT
+  if(trendDown&&momentumDown&&pullbackShort&&rsiV<55&&bearishCandle&&volumeOk)
+    return{signal:'sell',
+      reason:`trend pullback S | slope:${ema200Slope.toFixed(1)} RSI:${rsiV.toFixed(0)} vol:${(vol/avgVol).toFixed(1)}×`,
+      slMult,tpMult};
+
+  // Contextual wait reason (most specific first)
+  const why=!trendUp&&!trendDown ? (ema200Slope===0?'EMA200 флэт':`нет тренда (slope:${ema200Slope.toFixed(1)})`)
+    : !momentumUp&&!momentumDown ? 'EMA20≈EMA50'
+    : !pullbackLong&&!pullbackShort ? 'нет пулбэка к EMA20 (0.3%)'
+    : !volumeOk ? `объём слаб ${(vol/avgVol).toFixed(2)}×`
+    : trendUp&&rsiV<=45 ? `RSI слаб: ${rsiV.toFixed(0)}`
+    : trendDown&&rsiV>=55 ? `RSI высок: ${rsiV.toFixed(0)}`
+    : 'нет подтверждения свечой';
+  return{signal:'wait',reason:why,slMult,tpMult};
+}
+
+// ═══════════════════════════════════
 // ANALYZE (live)
 // ═══════════════════════════════════
 function analyze(){
@@ -795,39 +1020,48 @@ function analyze(){
 
   const{bullProb,reasons}=computeProb(idx,closes,e20arr,e50arr,e200arr,rsiArr,bband,macdData,atr,levels,patterns,marketRegime);
 
-  let signal='wait';
-  if(bullProb>=0.62) signal='buy';
-  if(bullProb<=0.38) signal='sell';
+  // Hard strategy overrides the probability model for the live signal
+  const sigResult=computeSignal(idx,closes,e20arr,e50arr,e200arr,rsiArr,atr,candles);
+  const signal=sigResult.signal;
+  const reason=sigResult.reason;
+
+  // Confidence bar still driven by probability model (background context)
   const conf=Math.round(Math.abs(bullProb-0.5)*2*100);
 
   const box=el('signalBox');box.className='signal-box '+signal;
-  el('signalLabel').textContent=signal==='buy'?'▲ ПОКУПАТЬ':signal==='sell'?'▼ ПРОДАВАТЬ':'— ЖДАТЬ';
-  el('signalReason').textContent=reasons.slice(0,4).join(' | ');
+  el('signalLabel').textContent=signal==='buy'?'▲ BUY':signal==='sell'?'▼ SELL':'— WAIT';
+  el('signalReason').textContent=reason;
   el('confidenceBar').style.width=conf+'%';
-  el('probLabel').textContent=`Вероятность: ${(bullProb*100).toFixed(1)}%`;
+  el('probLabel').textContent=`Prob-модель: ${(bullProb*100).toFixed(0)}% | ATR: ${(atr/last.close*100).toFixed(2)}%`;
   const pd=bullProb>=0.62?`${(bullProb*100).toFixed(0)}%↑`:bullProb<=0.38?`${((1-bullProb)*100).toFixed(0)}%↓`:`нейтр.`;
   el('probDisplay').textContent=pd;
   el('probDisplay').style.color=signal==='buy'?'var(--bull)':signal==='sell'?'var(--bear)':'var(--text2)';
 
   const badge=el('signalBadge');badge.className='signal-badge '+signal;
-  badge.textContent=signal==='buy'?'▲ ПОКУПАТЬ':signal==='sell'?'▼ ПРОДАВАТЬ':'— ЖДАТЬ';
+  badge.textContent=signal==='buy'?'▲ ЛОНГ':signal==='sell'?'▼ ШОРТ':'— ЖДАТЬ';
 
   if(signal!=='wait'){
-    const entry=last.close,sl=signal==='buy'?entry-atr*1.5:entry+atr*1.5;
-    const tp1=signal==='buy'?entry+atr*2:entry-atr*2;
-    const tp2=signal==='buy'?entry+atr*4:entry-atr*4;
+    const entry=last.close;
+    const isLong = signal==='buy';
+    const sm=sigResult.slMult||1.5, tm=sigResult.tpMult||3;
+    const sl = isLong ? entry-atr*sm : entry+atr*sm;
+    const tp1= isLong ? entry+atr*tm : entry-atr*tm;
+    const tp2= isLong ? entry+atr*tm*1.5 : entry-atr*tm*1.5;
     const rr=(Math.abs(tp1-entry)/Math.abs(entry-sl)).toFixed(2);
     el('entryPrice').textContent=fmtPrice(entry);el('stopPrice').textContent=fmtPrice(sl);
     el('tp1Price').textContent=fmtPrice(tp1);el('tp2Price').textContent=fmtPrice(tp2);
     el('rrRatio').textContent=rr+'R';
+    updateFuturesPanel(entry, sl, tp1, signal);
     // Fix 4: log signal only when it changes, no spam
     if(signal !== lastSignal){
-      log(`${signal==='buy'?'🟢 BUY':'🔴 SELL'} ${currentSymbol}@${fmtPrice(entry)} SL:${fmtPrice(sl)} TP:${fmtPrice(tp1)} P:${(bullProb*100).toFixed(0)}%`,signal==='buy'?'var(--bull)':'var(--bear)');
+      const dir = tradeDirection==='auto' ? (isLong?'LONG':'SHORT') : tradeDirection.toUpperCase();
+      log(`${isLong?'🟢':'🔴'} ${dir} ×${leverage} ${currentSymbol}@${fmtPrice(entry)} SL:${fmtPrice(sl)} TP:${fmtPrice(tp1)} | ${reason}`, isLong?'var(--bull)':'var(--bear)');
       lastSignal=signal;
     }
   } else {
     ['entryPrice','stopPrice','tp1Price','tp2Price'].forEach(id=>el(id).textContent='—');
     el('rrRatio').textContent='—';
+    updateFuturesPanel(null,null,null,'wait');
     lastSignal=null; // reset so next non-wait signal gets logged
   }
 
@@ -875,7 +1109,7 @@ function updateIndicators(idx,closes,e20a,e50a,e200a,bb,macdData,last){
 }
 
 // ═══════════════════════════════════
-// BACKTEST (честный)
+// BACKTEST (честный, фьючерсы)
 // ═══════════════════════════════════
 function runBacktest(){
   if(!candles.length){alert('Загрузите данные!');return;}
@@ -883,58 +1117,86 @@ function runBacktest(){
   const closes=candles.map(c=>c.close);
   const e20arr=ema(closes,20),e50arr=ema(closes,50),e200arr=ema(closes,200);
   const rsiArr=rsiCalc(closes,14);
-  const bband=bollingerBands(closes);
-  const macdData=macdCalc(closes);
   const atrAll=atrSeries(candles,14);
-  const levels=findSR(candles);
+
+  const lev=leverage;
+  const marginFrac=marginPct/100;
 
   const trades=[];let inTrade=null;
   let capital=START_CAPITAL,peakCap=capital,maxDD=0;
   const equityCurve=[{t:candles[0].time,v:capital}];
+  let liquidations=0;
 
   const minIdx=Math.max(210,50);
   for(let i=minIdx;i<candles.length-1;i++){
     const c=candles[i],next=candles[i+1];
     const atr=atrAll[i];if(!atr)continue;
     const regime=detectRegime(closes.slice(0,i+1),e200arr.slice(0,i+1),atr);
-    const patterns=detectPatterns(candles.slice(Math.max(0,i-5),i+1));
-    const{bullProb}=computeProb(i,closes,e20arr,e50arr,e200arr,rsiArr,bband,macdData,atr,levels,patterns,regime);
+    // Hard strategy: entry + exit signal, adaptive SL/TP multipliers
+    const{signal:sig,slMult:sm=1.5,tpMult:tm=3}=computeSignal(i,closes,e20arr,e50arr,e200arr,rsiArr,atr,candles);
 
     if(!inTrade){
-      if(bullProb>=0.64){
+      const openLong  = sig==='buy'  && (tradeDirection==='long'||tradeDirection==='auto');
+      const openShort = sig==='sell' && (tradeDirection==='short'||tradeDirection==='auto');
+      if(openLong || openShort){
+        const dir = openLong?'long':'short';
         const rawEntry=next.open;
-        const entry=rawEntry*(1+SLIPPAGE); // adverse slippage
-        const entryFee=entry*FEE;
-        const sl=entry-atr*1.5,tp=entry+atr*3;
-        const riskUnit=entry-sl;if(riskUnit<=0)continue;
-        const size=(capital*RISK_PER_TRADE)/riskUnit;
-        const cost=size*(entry+entry*FEE);
-        if(cost>capital*0.95)continue;
-        inTrade={entry,sl,tp,size,entryFee:size*entry*FEE,entryTime:next.time};
+        const entry=dir==='long' ? rawEntry*(1+SLIPPAGE) : rawEntry*(1-SLIPPAGE);
+        const margin=capital*marginFrac;
+        const positionUsd=margin*lev;
+        const positionSize=positionUsd/entry; // contracts
+        const entryFee=positionUsd*FEE;
+        // Fix 4: regime-adaptive SL/TP
+        const sl=dir==='long' ? entry-atr*sm : entry+atr*sm;
+        const tp=dir==='long' ? entry+atr*tm : entry-atr*tm;
+        const liqPrice=calcLiquidation(entry,lev,dir);
+        if(margin>capital*0.95)continue;
+        inTrade={dir,entry,sl,tp,liqPrice,margin,positionSize,positionUsd,entryFee,entryTime:next.time};
       }
     } else {
       let closed=false,exitReason='',exitPrice=c.close;
-      if(c.low<=inTrade.sl){closed=true;exitReason='SL';exitPrice=inTrade.sl;}
-      else if(c.high>=inTrade.tp){closed=true;exitReason='TP';exitPrice=inTrade.tp;}
-      else if(bullProb<=0.36){closed=true;exitReason='Signal';}
+      const d=inTrade.dir;
+
+      // Check liquidation first (intracandle)
+      const liqHit = d==='long' ? c.low<=inTrade.liqPrice : c.high>=inTrade.liqPrice;
+      if(liqHit){
+        closed=true; exitReason='LIQ'; exitPrice=inTrade.liqPrice;
+      } else if(d==='long'){
+        if(c.low<=inTrade.sl){closed=true;exitReason='SL';exitPrice=inTrade.sl;}
+        else if(c.high>=inTrade.tp){closed=true;exitReason='TP';exitPrice=inTrade.tp;}
+        // Fix 5: exit LONG only on confirmed opposite hard signal
+        else if(sig==='sell'){closed=true;exitReason='Signal↓';}
+      } else {
+        if(c.high>=inTrade.sl){closed=true;exitReason='SL';exitPrice=inTrade.sl;}
+        else if(c.low<=inTrade.tp){closed=true;exitReason='TP';exitPrice=inTrade.tp;}
+        // Fix 5: exit SHORT only on confirmed opposite hard signal
+        else if(sig==='buy'){closed=true;exitReason='Signal↑';}
+      }
+
       if(closed){
-        const exit=exitPrice*(1-SLIPPAGE); // adverse slippage on exit
-        const exitFee=inTrade.size*exit*FEE;
-        const grossPnl=(exit-inTrade.entry)*inTrade.size;
+        const exit = d==='long' ? exitPrice*(1-SLIPPAGE) : exitPrice*(1+SLIPPAGE);
+        const exitFee=inTrade.positionUsd*FEE;
+        const grossPnl=calcFuturesPnl(inTrade.entry,exit,d,inTrade.positionSize);
         const totalFees=inTrade.entryFee+exitFee;
-        const netPnl=grossPnl-totalFees;
-        const pnlPct=netPnl/capital*100;
+        let netPnl=grossPnl-totalFees;
+        // Liquidation: lose entire margin
+        if(exitReason==='LIQ'){ netPnl=-inTrade.margin; liquidations++; }
+        const pnlPct=netPnl/inTrade.margin*100; // % of margin (leveraged)
         capital+=netPnl;
+        if(capital<=0){capital=0;} // rekt
         if(capital>peakCap)peakCap=capital;
         const dd=(peakCap-capital)/peakCap*100;if(dd>maxDD)maxDD=dd;
         equityCurve.push({t:c.time,v:capital});
         trades.push({
-          type:'LONG',entryTime:new Date(inTrade.entryTime).toLocaleDateString('ru'),
+          type:d==='long'?`LONG ×${lev}`:`SHORT ×${lev}`,
+          entryTime:new Date(inTrade.entryTime).toLocaleDateString('ru'),
           exitTime:new Date(c.time).toLocaleDateString('ru'),
           entry:inTrade.entry,exit,grossPnl,totalFees,netPnl,pnlPct,
-          reason:exitReason,regime
+          reason:exitReason,regime,
+          margin:inTrade.margin
         });
         inTrade=null;
+        if(capital<=0) break; // bankrupt
       }
     }
   }
@@ -949,12 +1211,14 @@ function runBacktest(){
   const avgW=winners.length?winners.reduce((a,t)=>a+t.pnlPct,0)/winners.length:0;
   const avgL=losers.length?losers.reduce((a,t)=>a+t.pnlPct,0)/losers.length:0;
   const pf=losers.length&&winners.length?(winners.reduce((a,t)=>a+t.netPnl,0)/Math.abs(losers.reduce((a,t)=>a+t.netPnl,0))).toFixed(2):'∞';
+  const longTrades=trades.filter(t=>t.type.includes('LONG')).length;
+  const shortTrades=trades.filter(t=>t.type.includes('SHORT')).length;
 
-  log(`✅ Бэктест: ${tot} сд | WR:${wr}% | Рез:${ret}% | MaxDD:${maxDD.toFixed(1)}% | Fees:-$${totalFees.toFixed(0)}`,'var(--accent)');
+  log(`✅ Бэктест ×${lev}: ${tot} сд (L:${longTrades}/S:${shortTrades}) | WR:${wr}% | Рез:${ret}% | MaxDD:${maxDD.toFixed(1)}% | LIQ:${liquidations}`,'var(--accent)');
 
   el('backtestContent').innerHTML=`
     <div style="font-size:10px;color:var(--text2);margin-bottom:10px;padding:6px 10px;background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.2);border-radius:4px;">
-      ⚠️ Честный бэктест: Fee <b>${(FEE*100).toFixed(2)}%</b> + Slippage <b>${(SLIPPAGE*100).toFixed(2)}%</b> (вх.+вых.) | Риск <b>${(RISK_PER_TRADE*100).toFixed(0)}%/сд</b> | Стратегия: <b>${{trend:'Трендовая',meanrev:'Mean Reversion',hybrid:'Гибридная'}[currentStrategy]}</b> | Режим: <b>${marketRegime}</b>
+      ⚡ Фьючерсы ×${lev} | Маржа: ${marginPct}% депозита | Fee <b>${(FEE*100).toFixed(2)}%</b> + Slip <b>${(SLIPPAGE*100).toFixed(2)}%</b> | Направление: <b>${{long:'только LONG',short:'только SHORT',auto:'LONG + SHORT'}[tradeDirection]}</b> | LIQ: <b style="color:var(--bear)">${liquidations}</b>
     </div>
     <div class="backtest-grid">
       <div class="bt-stat"><div class="bt-stat-val ${ret>=0?'pos':'neg'}">${ret}%</div><div class="bt-stat-label">ДОХОДНОСТЬ</div></div>
@@ -964,23 +1228,26 @@ function runBacktest(){
       <div class="bt-stat"><div class="bt-stat-val">${tot}</div><div class="bt-stat-label">СДЕЛОК</div></div>
       <div class="bt-stat"><div class="bt-stat-val ${netPnl>=0?'pos':'neg'}">${netPnl>=0?'+':''}$${netPnl.toFixed(0)}</div><div class="bt-stat-label">NET PnL</div></div>
       <div class="bt-stat"><div class="bt-stat-val neg">-$${totalFees.toFixed(0)}</div><div class="bt-stat-label">КОМИССИИ</div></div>
-      <div class="bt-stat"><div class="bt-stat-val pos">+${avgW.toFixed(2)}%</div><div class="bt-stat-label">СР. ВЫИГРЫШ</div></div>
-      <div class="bt-stat"><div class="bt-stat-val neg">${avgL.toFixed(2)}%</div><div class="bt-stat-label">СР. УБЫТОК</div></div>
+      <div class="bt-stat"><div class="bt-stat-val pos">+${avgW.toFixed(1)}%</div><div class="bt-stat-label">СР. ВЫИГРЫШ</div></div>
+      <div class="bt-stat"><div class="bt-stat-val neg">${avgL.toFixed(1)}%</div><div class="bt-stat-label">СР. УБЫТОК</div></div>
       <div class="bt-stat"><div class="bt-stat-val">$${Math.round(capital).toLocaleString()}</div><div class="bt-stat-label">КАПИТАЛ</div></div>
     </div>`;
 
   el('tradesContent').innerHTML=`<table class="trade-table">
-    <thead><tr><th>Тип</th><th>Вход</th><th>Выход</th><th>Цена вх.</th><th>Цена вых.</th><th>NET PnL</th><th>%</th><th>Fees</th><th>Причина</th><th>Режим</th></tr></thead>
-    <tbody>${trades.slice(-60).reverse().map(t=>`<tr>
-      <td style="color:var(--accent2)">${t.type}</td>
-      <td>${t.entryTime}</td><td>${t.exitTime}</td>
-      <td>${fmtPrice(t.entry)}</td><td>${fmtPrice(t.exit)}</td>
-      <td class="${t.netPnl>=0?'profit-pos':'profit-neg'}">${t.netPnl>=0?'+':''}$${t.netPnl.toFixed(2)}</td>
-      <td class="${t.pnlPct>=0?'profit-pos':'profit-neg'}">${t.pnlPct>=0?'+':''}${t.pnlPct.toFixed(2)}%</td>
-      <td style="color:var(--text2)">-$${t.totalFees.toFixed(2)}</td>
-      <td style="color:var(--text2)">${t.reason}</td>
-      <td style="color:var(--text2);font-size:9px;">${t.regime}</td>
-    </tr>`).join('')}</tbody></table>`;
+    <thead><tr><th>Тип</th><th>Вход</th><th>Выход</th><th>Цена вх.</th><th>Цена вых.</th><th>NET PnL</th><th>% маржи</th><th>Fees</th><th>Причина</th></tr></thead>
+    <tbody>${trades.slice(-60).reverse().map(t=>{
+      const reasonColor=t.reason==='LIQ'?'var(--bear)':t.reason==='TP'?'var(--bull)':'var(--text2)';
+      const typeColor=t.type.includes('LONG')?'var(--bull)':'var(--bear)';
+      return`<tr>
+        <td style="color:${typeColor}">${t.type}</td>
+        <td>${t.entryTime}</td><td>${t.exitTime}</td>
+        <td>${fmtPrice(t.entry)}</td><td>${fmtPrice(t.exit)}</td>
+        <td class="${t.netPnl>=0?'profit-pos':'profit-neg'}">${t.netPnl>=0?'+':''}$${t.netPnl.toFixed(2)}</td>
+        <td class="${t.pnlPct>=0?'profit-pos':'profit-neg'}">${t.pnlPct>=0?'+':''}${t.pnlPct.toFixed(1)}%</td>
+        <td style="color:var(--text2)">-$${t.totalFees.toFixed(2)}</td>
+        <td style="color:${reasonColor};font-weight:${t.reason==='LIQ'?700:400}">${t.reason==='LIQ'?'⚡ LIQ':t.reason}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
 
   drawEquityCurve();
 }
